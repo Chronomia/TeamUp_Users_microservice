@@ -38,11 +38,22 @@ class UserModel(BaseModel):
     )
 
 
+class UserGroupModel(BaseModel):
+    id: Optional[PyObjectId] = Field(alias="_id", default=None)
+    group_member_list: List[str] = Field(...)
+    group_organizer_list: List[str] = Field(...)
+
+
+class UserEventModel(BaseModel):
+    id: Optional[PyObjectId] = Field(alias="_id", default=None)
+    event_organizer_list: List[str] = Field(...)
+    event_participation_list: List[str] = Field(...)
+
+
 class UpdateUserModel(BaseModel):
     username: Optional[str] = None
     first_name: Optional[str] = None
     last_name: Optional[str] = None
-    email: Optional[EmailStr] = None
     contact: Optional[str] = None
     location: Optional[str] = None
     interests: Optional[str] = None
@@ -59,7 +70,6 @@ class UpdateUserModel(BaseModel):
                 "username": "username@123",
                 "first_name": "Your First Name",
                 "last_name": "Your Last Name",
-                "email": "name@example.com",
                 "contact": "(123) 456-7890",
                 "location": "New York, NY",
                 "interests": "Baseball, Football, Cycling",
