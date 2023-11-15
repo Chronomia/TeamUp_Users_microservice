@@ -7,7 +7,7 @@ from fastapi import FastAPI, Body, HTTPException
 from pymongo import MongoClient, ReturnDocument
 from starlette import status
 
-from src.User import UserModel, UserGroupModel, UserEventModel, UpdateUserModel
+from src.User import UserModel, UserGroupModel, UserEventModel, UpdateUserModel, UserCollection
 
 ATLAS_URI = "mongodb+srv://ll3598:mb3raWSgGgaeSg6T@teamup.zgtc4hf.mongodb.net/?retryWrites=true&w=majority"
 logger = logging.getLogger(__name__)
@@ -54,6 +54,17 @@ async def create_user(user: UserModel = Body(...)):
     )
 
     return created_user
+
+
+@app.get(
+    "/users/",
+    response_description="List all users with pagination",
+    response_model=UserCollection,
+    response_model_by_alias=False,
+)
+async def list_all_users(page: int = 1, limit: int = 5):
+    items = mongodb_service["collection"].find().skip((page - 1) * limit).limit(limit)
+    return UserCollection(users=items)
 
 
 @app.get(
