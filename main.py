@@ -1,6 +1,7 @@
 import logging
 from contextlib import asynccontextmanager
 
+import certifi
 import uvicorn
 from bson import ObjectId
 from fastapi import FastAPI, Body, HTTPException
@@ -16,7 +17,7 @@ mongodb_service = {}
 
 @asynccontextmanager
 async def lifespan(service: FastAPI):
-    mongodb_service["client"] = MongoClient(ATLAS_URI)
+    mongodb_service["client"] = MongoClient(ATLAS_URI, tlsCAFile=certifi.where())
     mongodb_service["db"] = mongodb_service["client"]["TeamUp"]
     mongodb_service["collection"] = mongodb_service["db"]["Users"]
     yield
