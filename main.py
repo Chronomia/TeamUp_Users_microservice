@@ -7,6 +7,7 @@ from bson import ObjectId
 from fastapi import FastAPI, Body, HTTPException
 from pymongo import MongoClient, ReturnDocument
 from starlette import status
+from typing import Optional
 
 from src.User import UserModel, UserGroupModel, UserEventModel, UpdateUserModel, UserCollection
 
@@ -59,14 +60,19 @@ async def create_user(user: UserModel = Body(...)):
 
 @app.get(
     "/users/",
-    response_description="List all users with pagination",
+    response_description="List all users with pagination and optional filtering by interest/location",
     response_model=UserCollection,
     response_model_by_alias=False,
 )
-async def list_all_users(page: int = 1, limit: int = 5):
-    items = mongodb_service["collection"].find().skip((page - 1) * limit).limit(limit)
-    return UserCollection(users=items)
+async def list_all_users(interest: Optional[str] = None, location: Optional[str] = None, page: int = 1, limit: int = 5):
+    query = {}
+    if interest:
+        query["interests"] = {"$in": [interest]}
+    if location:
+        query["location"] = location
 
+    items = mongodb_service["collection"].find(query).skip((page - 1) * limit).limit(limit)
+    return UserCollection(users=items)
 
 @app.get(
     "/users/{user_id}",
@@ -118,14 +124,27 @@ async def update_user_profile(user_id: str, user: UpdateUserModel = Body(...)):
 
     raise HTTPException(status_code=404, detail=f"User ID of {user_id} not found")
 
+@app.delete(
+    "/users/{user_id}",
+    response_description="Delete a user",
+    response_model=UserModel,
+    response_model_by_alias=False
+)
+async def delete_user(user_id: str):
+    delete_result = mongodb_service["collection"].delete_one({"_id": ObjectId(user_id)})
+
+    if delete_result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail=f"User with ID {user_id} not found")
+
+    return {"message": "User deleted successfully"}
 
 @app.get(
     "/users/{user_id}/events",
     response_description="Returns user's event records by user id",
     response_model=UserEventModel,
-    response_model_by_alias=False,
+    response_model_by_alias=False
 )
-async def find_use_event_by_id(user_id: str):
+async def find_user_event_by_id(user_id: str):
     user = mongodb_service["collection"].find_one(
         {"_id": ObjectId(user_id)},
         {"event_organizer_list": 1, "event_participation_list": 1}
@@ -170,7 +189,6 @@ async def find_user_comment_by_id(user_id: str):
         raise HTTPException(status_code=404, detail=f"User ID of {user_id} not found")
 
     return user
-
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)

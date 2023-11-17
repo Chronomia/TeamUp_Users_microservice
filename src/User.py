@@ -14,8 +14,10 @@ class UserModel(BaseModel):
     email: EmailStr = Field(...)
     contact: str = Field(...)
     location: str = Field(...)
-    interests: str = Field(...)
+    interests: List[str] = Field(...)
     age: int = Field(..., ge=13, le=150)
+    gender: str = Field(...)
+    friends: List[str] = Field([])
     group_member_list: List[str] = Field(...)
     group_organizer_list: List[str] = Field(...)
     event_organizer_list: List[str] = Field(...)
@@ -31,8 +33,10 @@ class UserModel(BaseModel):
                 "email": "name@example.com",
                 "contact": "(123) 456-7890",
                 "location": "New York, NY",
-                "interests": "Baseball, Football, Cycling",
-                "age": 25
+                "interests": ["Baseball", "Football", "Cycling"],
+                "age": 25,
+                "gender": "Male",
+
             }
         },
     )
@@ -56,7 +60,7 @@ class UpdateUserModel(BaseModel):
     last_name: Optional[str] = None
     contact: Optional[str] = None
     location: Optional[str] = None
-    interests: Optional[str] = None
+    interests: Optional[List[str]] = None
     age: Optional[int] = None
     group_member_list: Optional[List[str]] = None
     group_organizer_list: Optional[List[str]] = None
@@ -72,7 +76,7 @@ class UpdateUserModel(BaseModel):
                 "last_name": "Your Last Name",
                 "contact": "(123) 456-7890",
                 "location": "New York, NY",
-                "interests": "Baseball, Football, Cycling",
+                "interests": ["Baseball", "Football", "Cycling"],
                 "age": 25
             }
         },
