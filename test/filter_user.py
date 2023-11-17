@@ -12,6 +12,5 @@ headers = {
 }
 
 response = requests.get(list_users_url, params=params, headers=headers)
-
 print("Status Code:", response.status_code)
 print("Response:", response.json() if response.content else "No Content")
