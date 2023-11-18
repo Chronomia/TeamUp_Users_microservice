@@ -3,7 +3,7 @@ import requests
 update_url = "http://localhost:8000/users/6557ed5752f6af7655975db2/update"
 
 update_data = {
-    "age": 20,
+    "age": 22,
 }
 
 headers = {
