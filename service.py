@@ -1,34 +1,44 @@
 import json
 import logging
+import os
 from contextlib import asynccontextmanager
-
-import certifi
-import uvicorn
-from bson import ObjectId
-from fastapi import FastAPI, Body, HTTPException
-from pymongo import MongoClient, ReturnDocument
-from starlette import status
 from typing import Optional
 
-from src.User import UserModel, UserGroupModel, UserEventModel, UpdateUserModel, UserCollection
-
-from pydantic import BaseModel
-
 import boto3
+import certifi
+import uvicorn
 from botocore.exceptions import ClientError
+from bson import ObjectId
+from fastapi import FastAPI, Body, HTTPException, Security, Depends
+from fastapi.security import APIKeyCookie
+from fastapi_sso.sso.base import OpenID
+from jose import jwt
+from pydantic import BaseModel
+from pymongo import MongoClient, ReturnDocument
+from random_username.generate import generate_username
+from starlette import status
 
-ATLAS_URI = "mongodb+srv://ll3598:mb3raWSgGgaeSg6T@teamup.zgtc4hf.mongodb.net/?retryWrites=true&w=majority"
+from google_auth import auth_app
+from app.user import UserModel, UserGroupModel, UserEventModel, UpdateUserModel, UserCollection
+
+ATLAS_URI = os.environ.get('ATLAS_URI')
+SECRET_KEY = os.environ.get('SECRET_KEY')
 logger = logging.getLogger(__name__)
 mongodb_service = {}
 
-topic_arn = "arn:aws:sns:us-east-1:083303715298:UserUpdatesTopic"
+TOPIC_ARN = os.environ.get('TOPIC_ARN')
 sns_client = boto3.client(
     'sns',
     region_name='us-east-1'
 )
 
+
+class SimpleResponseModel(BaseModel):
+    message: str
+
+
 @asynccontextmanager
-async def lifespan(service: FastAPI):
+async def lifespan(app: FastAPI):
     mongodb_service["client"] = MongoClient(ATLAS_URI, tlsCAFile=certifi.where())
     mongodb_service["db"] = mongodb_service["client"]["TeamUp"]
     mongodb_service["collection"] = mongodb_service["db"]["Users"]
@@ -36,7 +46,17 @@ async def lifespan(service: FastAPI):
     mongodb_service.clear()
 
 
-app = FastAPI(lifespan=lifespan)
+async def get_logged_user(cookie: str = Security(APIKeyCookie(name="token"))) -> OpenID:
+    try:
+        claims = jwt.decode(cookie, key=SECRET_KEY, algorithms=["HS256"])
+        return OpenID(**claims["pld"])
+    except Exception as error:
+        raise HTTPException(status_code=401, detail="Invalid authentication credentials") from error
+
+
+service = FastAPI(lifespan=lifespan)
+service.mount("/auth", auth_app)
+
 
 def publish_to_sns(subject, message):
     message_json = json.dumps(message)
@@ -44,8 +64,8 @@ def publish_to_sns(subject, message):
         if "_id" in message:
             message["_id"] = str(message["_id"])
         response = sns_client.publish(
-            TopicArn=topic_arn,
-            Subject = subject,
+            TopicArn=TOPIC_ARN,
+            Subject=subject,
             Message=message_json
         )
         return response
@@ -53,12 +73,28 @@ def publish_to_sns(subject, message):
         print(f"Error publishing to SNS: {e}")
         raise
 
-@app.get("/")
-async def index():
-    return {"status": "online"}
+
+async def build_user_info(user):
+    user_info = {
+        "username": user.username,
+        "first_name": user.first_name,
+        "last_name": user.last_name,
+        "email": user.email,
+        "contact": user.contact,
+        "location": user.location,
+        "interests": user.interests,
+        "age": user.age,
+        "gender": user.gender,
+    }
+    return user_info
 
 
-@app.post(
+@service.get('/')
+async def root():
+    return {'user_service_status': 'ONLINE'}
+
+
+@service.post(
     "/users/",
     response_description="Add a new user",
     response_model=UserModel,
@@ -79,23 +115,14 @@ async def create_user(user: UserModel = Body(...)):
     created_user = mongodb_service["collection"].find_one(
         {"_id": new_user.inserted_id}
     )
-    user_info = {
-        "username":created_user['username'],
-        "first_name":created_user['first_name'],
-        "last_name":created_user['last_name'],
-        "email":created_user['email'],
-        "contact":created_user['contact'],
-        "location":created_user['location'],
-        "interests":created_user['interests'],
-        "age":created_user['age'],
-        "gender":created_user['gender'],
-    }
+
+    user_info = await build_user_info(user)
 
     publish_to_sns(f"User {created_user['_id']} inserted successfully", user_info)
     return created_user
 
 
-@app.get(
+@service.get(
     "/users/",
     response_description="List all users with pagination and optional filtering by interest/location",
     response_model=UserCollection,
@@ -111,8 +138,9 @@ async def list_all_users(interest: Optional[str] = None, location: Optional[str]
     items = mongodb_service["collection"].find(query).skip((page - 1) * limit).limit(limit)
     return UserCollection(users=items)
 
-@app.get(
-    "/users/{user_id}",
+
+@service.get(
+    "/users/id/{user_id}",
     response_description="Find a user by id",
     response_model=UserModel,
     response_model_by_alias=False,
@@ -128,7 +156,41 @@ async def find_user_by_id(user_id: str):
     return user
 
 
-@app.put(
+@service.get(
+    "/users/name/{username}",
+    response_description="Find a user by username",
+    response_model=UserModel,
+    response_model_by_alias=False,
+)
+async def find_user_by_username(username: str):
+    user = mongodb_service["collection"].find_one(
+        {"username": username}
+    )
+
+    if user is None:
+        raise HTTPException(status_code=404, detail=f"Username {username} not found")
+
+    return user
+
+
+@service.get(
+    "/users/email/{email}",
+    response_description="Find a user by email",
+    response_model=UserModel,
+    response_model_by_alias=False,
+)
+async def find_user_by_email(email: str):
+    user = mongodb_service["collection"].find_one(
+        {"email": email}
+    )
+
+    if user is None:
+        raise HTTPException(status_code=404, detail=f"Email {email} is not associated with a user account")
+
+    return user
+
+
+@service.put(
     "/users/{user_id}/update",
     response_description="Update a user's profile by id",
     response_model=UserModel,
@@ -168,10 +230,7 @@ async def update_user_profile(user_id: str, user: UpdateUserModel = Body(...)):
     raise HTTPException(status_code=404, detail=f"User ID of {user_id} not found")
 
 
-class SimpleResponseModel(BaseModel):
-    message: str
-    
-@app.delete(
+@service.delete(
     "/users/{user_id}",
     response_description="Delete a user",
     response_model=SimpleResponseModel,
@@ -186,22 +245,14 @@ async def delete_user(user_id: str):
 
     if delete_result.deleted_count == 0:
         raise HTTPException(status_code=404, detail=f"User with ID {user_id} not found")
-    user_info = {
-        "username":user['username'],
-        "first_name":user['first_name'],
-        "last_name":user['last_name'],
-        "email":user['email'],
-        "contact":user['contact'],
-        "location":user['location'],
-        "interests":user['interests'],
-        "age":user['age'],
-        "gender":user['gender'],
-    }
+
+    user_info = await build_user_info(user)
 
     publish_to_sns(f"User {user_id} has been deleted", user_info)
     return {"message": "User deleted successfully"}
 
-@app.get(
+
+@service.get(
     "/users/{user_id}/events",
     response_description="Returns user's event records by user id",
     response_model=UserEventModel,
@@ -219,7 +270,7 @@ async def find_user_event_by_id(user_id: str):
     return user
 
 
-@app.get(
+@service.get(
     "/users/{user_id}/groups",
     response_description="Returns user's group records by user id",
     response_model=UserGroupModel,
@@ -237,13 +288,14 @@ async def find_user_group_by_id(user_id: str):
     return user
 
 
-@app.get(
+@service.get(
     "/users/{user_id}/comments",
     response_description="Returns user's comment records by user id",
     response_model=UserModel,
     response_model_by_alias=False,
 )
 async def find_user_comment_by_id(user_id: str):
+    # TODO: To be integrated with the group and event microservice
     user = mongodb_service["collection"].find_one(
         {"_id": ObjectId(user_id)}
     )
@@ -253,5 +305,42 @@ async def find_user_comment_by_id(user_id: str):
 
     return user
 
-if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+
+@service.get(
+    "/protected",
+    response_description="SSO login user",
+    response_model=UserModel,
+    response_model_by_alias=False
+)
+async def protected_endpoint(user: OpenID = Depends(get_logged_user)):
+    try:
+        user_result = await find_user_by_email(user.email)
+        return user_result
+    except HTTPException:
+        new_username = generate_username(1)[0]
+        while len(list(mongodb_service["collection"].find({"username": new_username}).limit(1))) == 1:
+            new_username = generate_username(1)[0]
+
+        new_user = {
+            "username": new_username,
+            "first_name": user.first_name,
+            "last_name": user.last_name,
+            "email": user.email,
+            "contact": "",
+            "location": "",
+            "interests": [],
+            "age": None,
+            "gender": "",
+            "friends": [],
+            "group_member_list": [],
+            "group_organizer_list": [],
+            "event_organizer_list": [],
+            "event_participation_list": []
+        }
+
+        user_result = await create_user(UserModel(**new_user))
+        return user_result
+
+
+if __name__ == '__main__':
+    uvicorn.run(service, host="0.0.0.0", port=8000)
