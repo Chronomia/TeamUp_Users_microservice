@@ -342,5 +342,13 @@ async def protected_endpoint(user: OpenID = Depends(get_logged_user)):
         return user_result
 
 
+@service.get(
+    "/logout-page",
+    response_description="Logout screen",
+)
+async def logout_success():
+    return {"Status": "Logout success"}
+
+
 if __name__ == '__main__':
     uvicorn.run(service, host="0.0.0.0", port=8000)

@@ -17,7 +17,7 @@ class UserModel(BaseModel):
     interests: List[str] = Field(...)
     age: Optional[int] = Field(..., ge=13, le=150)
     gender: str = Field(...)
-    friends: List[str] = Field([])
+    friends: List[str] = Field(...)
     group_member_list: List[str] = Field(...)
     group_organizer_list: List[str] = Field(...)
     event_organizer_list: List[str] = Field(...)

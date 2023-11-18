@@ -24,7 +24,7 @@ async def login():
 
 @auth_app.get("/logout")
 async def logout():
-    response = RedirectResponse(url="/prot")
+    response = RedirectResponse(url="/logout-page")
     response.delete_cookie(key="token")
     return response
 
