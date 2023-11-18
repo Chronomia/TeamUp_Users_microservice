@@ -24,8 +24,6 @@ mongodb_service = {}
 topic_arn = "arn:aws:sns:us-east-1:083303715298:UserUpdatesTopic"
 sns_client = boto3.client(
     'sns',
-    aws_access_key_id='AKIARGZKJ2HRBHMCTSOW',
-    aws_secret_access_key='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',
     region_name='us-east-1'
 )
 
