@@ -2,7 +2,7 @@ import requests
 
 username = "exampleuser"
 
-url = f"http://localhost:8000/users/65578061ab42592f44051019"
+url = f"http://localhost:8000/users/6558405db11eb1c3d4462d0b"
 
 headers = {
     "Content-Type": "application/json",

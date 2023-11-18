@@ -1,9 +1,9 @@
 import requests
 
-update_url = "http://localhost:8000/users/65578061ab42592f44051019/update"
+update_url = "http://localhost:8000/users/6557ed5752f6af7655975db2/update"
 
 update_data = {
-    "age": 23,
+    "age": 20,
 }
 
 headers = {

@@ -1,3 +1,4 @@
+import json
 import logging
 from contextlib import asynccontextmanager
 
@@ -11,10 +12,22 @@ from typing import Optional
 
 from src.User import UserModel, UserGroupModel, UserEventModel, UpdateUserModel, UserCollection
 
+from pydantic import BaseModel
+
+import boto3
+from botocore.exceptions import ClientError
+
 ATLAS_URI = "mongodb+srv://ll3598:mb3raWSgGgaeSg6T@teamup.zgtc4hf.mongodb.net/?retryWrites=true&w=majority"
 logger = logging.getLogger(__name__)
 mongodb_service = {}
 
+topic_arn = "arn:aws:sns:us-east-1:083303715298:UserUpdatesTopic"
+sns_client = boto3.client(
+    'sns',
+    aws_access_key_id='AKIARGZKJ2HRBHMCTSOW',
+    aws_secret_access_key='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',
+    region_name='us-east-1'
+)
 
 @asynccontextmanager
 async def lifespan(service: FastAPI):
@@ -27,6 +40,20 @@ async def lifespan(service: FastAPI):
 
 app = FastAPI(lifespan=lifespan)
 
+def publish_to_sns(subject, message):
+    message_json = json.dumps(message)
+    try:
+        if "_id" in message:
+            message["_id"] = str(message["_id"])
+        response = sns_client.publish(
+            TopicArn=topic_arn,
+            Subject = subject,
+            Message=message_json
+        )
+        return response
+    except ClientError as e:
+        print(f"Error publishing to SNS: {e}")
+        raise
 
 @app.get("/")
 async def index():
@@ -54,7 +81,19 @@ async def create_user(user: UserModel = Body(...)):
     created_user = mongodb_service["collection"].find_one(
         {"_id": new_user.inserted_id}
     )
+    user_info = {
+        "username":created_user['username'],
+        "first_name":created_user['first_name'],
+        "last_name":created_user['last_name'],
+        "email":created_user['email'],
+        "contact":created_user['contact'],
+        "location":created_user['location'],
+        "interests":created_user['interests'],
+        "age":created_user['age'],
+        "gender":created_user['gender'],
+    }
 
+    publish_to_sns(f"User {created_user['_id']} inserted successfully", user_info)
     return created_user
 
 
@@ -98,8 +137,8 @@ async def find_user_by_id(user_id: str):
     response_model_by_alias=False,
 )
 async def update_user_profile(user_id: str, user: UpdateUserModel = Body(...)):
-    existing_username = list(mongodb_service["collection"].find({"username": user.username}).limit(1))
-    if len(existing_username) == 1 and str(existing_username[0]["_id"]) != user_id:
+    current_user = mongodb_service["collection"].find_one({"_id": ObjectId(user_id)})
+    if len(current_user) == 1 and str(current_user[0]["_id"]) != user_id:
         print(list(mongodb_service["collection"].find({"username": user.username}).limit(1)))
         raise HTTPException(status_code=409, detail=f"Username {user.username} is already taken")
 
@@ -114,7 +153,13 @@ async def update_user_profile(user_id: str, user: UpdateUserModel = Body(...)):
             return_document=ReturnDocument.AFTER,
         )
 
+        changes = {k: {"old": current_user.get(k), 'new': user[k]} for k in user}
         if update_result is not None:
+            message = {
+                'details': changes
+            }
+
+            publish_to_sns(f"User data updated for user_id {user_id}", message)
             return update_result
         else:
             raise HTTPException(status_code=404, detail=f"User ID of {user_id} not found")
@@ -124,18 +169,38 @@ async def update_user_profile(user_id: str, user: UpdateUserModel = Body(...)):
 
     raise HTTPException(status_code=404, detail=f"User ID of {user_id} not found")
 
+
+class SimpleResponseModel(BaseModel):
+    message: str
+    
 @app.delete(
     "/users/{user_id}",
     response_description="Delete a user",
-    response_model=UserModel,
+    response_model=SimpleResponseModel,
     response_model_by_alias=False
 )
 async def delete_user(user_id: str):
+    user = mongodb_service["collection"].find_one({"_id": ObjectId(user_id)})
+    if user is None:
+        raise HTTPException(status_code=404, detail=f"User with ID {user_id} not found")
+
     delete_result = mongodb_service["collection"].delete_one({"_id": ObjectId(user_id)})
 
     if delete_result.deleted_count == 0:
         raise HTTPException(status_code=404, detail=f"User with ID {user_id} not found")
+    user_info = {
+        "username":user['username'],
+        "first_name":user['first_name'],
+        "last_name":user['last_name'],
+        "email":user['email'],
+        "contact":user['contact'],
+        "location":user['location'],
+        "interests":user['interests'],
+        "age":user['age'],
+        "gender":user['gender'],
+    }
 
+    publish_to_sns(f"User {user_id} has been deleted", user_info)
     return {"message": "User deleted successfully"}
 
 @app.get(
