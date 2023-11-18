@@ -15,7 +15,7 @@ class UserModel(BaseModel):
     contact: str = Field(...)
     location: str = Field(...)
     interests: List[str] = Field(...)
-    age: int = Field(..., ge=13, le=150)
+    age: Optional[int] = Field(..., ge=13, le=150)
     gender: str = Field(...)
     friends: List[str] = Field([])
     group_member_list: List[str] = Field(...)
@@ -36,7 +36,6 @@ class UserModel(BaseModel):
                 "interests": ["Baseball", "Football", "Cycling"],
                 "age": 25,
                 "gender": "Male",
-
             }
         },
     )

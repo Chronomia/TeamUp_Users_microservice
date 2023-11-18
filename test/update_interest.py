@@ -1,14 +1,13 @@
 import logging
+import os
 
 import certifi as certifi
-import collection as collection
 from pymongo import MongoClient
 
-ATLAS_URI = "mongodb+srv://ll3598:mb3raWSgGgaeSg6T@teamup.zgtc4hf.mongodb.net/?retryWrites=true&w=majority"
+ATLAS_URI = os.environ.get('ATLAS_URI')
 logger = logging.getLogger(__name__)
-mongodb_service = {}
 
-mongodb_service["client"] = MongoClient(ATLAS_URI, tlsCAFile=certifi.where())
+mongodb_service = {"client": MongoClient(ATLAS_URI, tlsCAFile=certifi.where())}
 mongodb_service["db"] = mongodb_service["client"]["TeamUp"]
 mongodb_service["collection"] = mongodb_service["db"]["Users"]
 
