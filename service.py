@@ -9,15 +9,20 @@ import certifi
 import uvicorn
 from botocore.exceptions import ClientError
 from bson import ObjectId
-from fastapi import FastAPI, Body, HTTPException
+from fastapi import FastAPI, Body, HTTPException, Security, Depends
+from fastapi.security import APIKeyCookie
+from fastapi_sso.sso.base import OpenID
+from jose import jwt
 from pydantic import BaseModel
 from pymongo import MongoClient, ReturnDocument
+from random_username.generate import generate_username
 from starlette import status
 
 from google_auth import auth_app
 from app.user import UserModel, UserGroupModel, UserEventModel, UpdateUserModel, UserCollection
 
 ATLAS_URI = os.environ.get('ATLAS_URI')
+SECRET_KEY = os.environ.get('SECRET_KEY')
 logger = logging.getLogger(__name__)
 mongodb_service = {}
 
@@ -39,6 +44,14 @@ async def lifespan(app: FastAPI):
     mongodb_service["collection"] = mongodb_service["db"]["Users"]
     yield
     mongodb_service.clear()
+
+
+async def get_logged_user(cookie: str = Security(APIKeyCookie(name="token"))) -> OpenID:
+    try:
+        claims = jwt.decode(cookie, key=SECRET_KEY, algorithms=["HS256"])
+        return OpenID(**claims["pld"])
+    except Exception as error:
+        raise HTTPException(status_code=401, detail="Invalid authentication credentials") from error
 
 
 service = FastAPI(lifespan=lifespan)
@@ -282,6 +295,7 @@ async def find_user_group_by_id(user_id: str):
     response_model_by_alias=False,
 )
 async def find_user_comment_by_id(user_id: str):
+    # TODO: To be integrated with the group and event microservice
     user = mongodb_service["collection"].find_one(
         {"_id": ObjectId(user_id)}
     )
@@ -290,6 +304,42 @@ async def find_user_comment_by_id(user_id: str):
         raise HTTPException(status_code=404, detail=f"User ID of {user_id} not found")
 
     return user
+
+
+@service.get(
+    "/protected",
+    response_description="SSO login user",
+    response_model=UserModel,
+    response_model_by_alias=False
+)
+async def protected_endpoint(user: OpenID = Depends(get_logged_user)):
+    try:
+        user_result = await find_user_by_email(user.email)
+        return user_result
+    except HTTPException:
+        new_username = generate_username(1)[0]
+        while len(list(mongodb_service["collection"].find({"username": new_username}).limit(1))) == 1:
+            new_username = generate_username(1)[0]
+
+        new_user = {
+            "username": new_username,
+            "first_name": user.first_name,
+            "last_name": user.last_name,
+            "email": user.email,
+            "contact": "",
+            "location": "",
+            "interests": [],
+            "age": None,
+            "gender": "",
+            "friends": [],
+            "group_member_list": [],
+            "group_organizer_list": [],
+            "event_organizer_list": [],
+            "event_participation_list": []
+        }
+
+        user_result = await create_user(UserModel(**new_user))
+        return user_result
 
 
 if __name__ == '__main__':
