@@ -21,6 +21,7 @@ from pymongo import MongoClient, ReturnDocument
 from random_username.generate import generate_username
 from starlette import status
 from passlib.context import CryptContext
+from starlette.middleware.cors import CORSMiddleware
 
 from app.google_auth import google_auth_app
 from app.user import UserModel, UserGroupModel, UserEventModel, UpdateUserModel, UserCollection, UserWithPwd
@@ -104,6 +105,13 @@ async def get_logged_user(cookie: str = Security(APIKeyCookie(name="token"))) ->
 
 service = FastAPI(lifespan=lifespan)
 service.mount("/auth", google_auth_app)
+service.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 def publish_to_sns(subject, message):

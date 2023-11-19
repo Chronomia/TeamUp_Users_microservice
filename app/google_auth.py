@@ -5,6 +5,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import RedirectResponse
 from fastapi_sso.sso.google import GoogleSSO
 from jose import jwt
+from starlette.middleware.cors import CORSMiddleware
 
 SECRET_KEY = os.environ.get('SECRET_KEY')
 CLIENT_ID = os.environ.get('CLIENT_ID')
@@ -13,7 +14,15 @@ CLIENT_SECRET = os.environ.get('CLIENT_SECRET')
 sso = GoogleSSO(client_id=CLIENT_ID,
                 client_secret=CLIENT_SECRET,
                 redirect_uri="http://127.0.0.1:8000/auth/callback")
+
 google_auth_app = FastAPI()
+google_auth_app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 @google_auth_app.get("/login")
