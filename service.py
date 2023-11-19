@@ -32,14 +32,15 @@ mongodb_service = {}
 TOPIC_ARN = os.environ.get('TOPIC_ARN')
 sns_client = boto3.client(
     'sns',
-    aws_access_key_id = aws_access_key,
-    aws_secret_access_key = secret_access_key_aws,
+    aws_access_key_id=aws_access_key,
+    aws_secret_access_key=secret_access_key_aws,
     region_name='us-east-1'
 )
 
 
 class SimpleResponseModel(BaseModel):
     message: str
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
