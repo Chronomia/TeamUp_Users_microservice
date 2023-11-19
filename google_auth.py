@@ -44,6 +44,6 @@ async def login_callback(request: Request):
     response.set_cookie(
         key="token", value=token, expires=expiration
     )  # This cookie will make sure /protected knows the user
-    #decoded = jwt.decode(token, key=SECRET_KEY, algorithms="HS256")
-    #print(decoded)
+    # decoded = jwt.decode(token, key=SECRET_KEY, algorithms="HS256")
+    # print(decoded)
     return response
