@@ -23,8 +23,8 @@ from app.user import UserModel, UserGroupModel, UserEventModel, UpdateUserModel,
 
 ATLAS_URI = os.environ.get('ATLAS_URI')
 SECRET_KEY = os.environ.get('SECRET_KEY')
-aws_access_key = os.environ.get('aws_access_key_id')
-secret_access_key_aws = os.environ.get('aws_secret_access_key')
+AWS_ACCESS_KEY = os.environ.get('AWS_ACCESS_KEY')
+AWS_SECRET_KEY = os.environ.get('AWS_SECRET_KEY')
 
 logger = logging.getLogger(__name__)
 mongodb_service = {}
@@ -32,8 +32,8 @@ mongodb_service = {}
 TOPIC_ARN = os.environ.get('TOPIC_ARN')
 sns_client = boto3.client(
     'sns',
-    aws_access_key_id=aws_access_key,
-    aws_secret_access_key=secret_access_key_aws,
+    aws_access_key_id=AWS_ACCESS_KEY,
+    aws_secret_access_key=AWS_SECRET_KEY,
     region_name='us-east-1'
 )
 
