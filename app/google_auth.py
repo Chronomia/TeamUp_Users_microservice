@@ -10,10 +10,11 @@ from starlette.middleware.cors import CORSMiddleware
 SECRET_KEY = os.environ.get('SECRET_KEY')
 CLIENT_ID = os.environ.get('CLIENT_ID')
 CLIENT_SECRET = os.environ.get('CLIENT_SECRET')
+AWS_EC2_ADDRESS = os.environ.get('AWS_EC2_ADDRESS')
 
 sso = GoogleSSO(client_id=CLIENT_ID,
                 client_secret=CLIENT_SECRET,
-                redirect_uri="http://127.0.0.1:8000/auth/callback")
+                redirect_uri=AWS_EC2_ADDRESS+"/auth/callback")
 
 google_auth_app = FastAPI()
 google_auth_app.add_middleware(
