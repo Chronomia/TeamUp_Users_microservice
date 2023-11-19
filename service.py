@@ -2,29 +2,38 @@ import json
 import logging
 import os
 from contextlib import asynccontextmanager
-from typing import Optional
+from datetime import timedelta, datetime
+from typing import Optional, Union, Annotated
 
 import boto3
 import certifi
 import uvicorn
+import random
+import string
 from botocore.exceptions import ClientError
 from bson import ObjectId
 from fastapi import FastAPI, Body, HTTPException, Security, Depends
-from fastapi.security import APIKeyCookie
+from fastapi.security import APIKeyCookie, OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from fastapi_sso.sso.base import OpenID
 from jose import jwt
 from pydantic import BaseModel
 from pymongo import MongoClient, ReturnDocument
 from random_username.generate import generate_username
 from starlette import status
+from passlib.context import CryptContext
 
-from google_auth import auth_app
-from app.user import UserModel, UserGroupModel, UserEventModel, UpdateUserModel, UserCollection
+from app.google_auth import google_auth_app
+from app.user import UserModel, UserGroupModel, UserEventModel, UpdateUserModel, UserCollection, UserWithPwd
 
 ATLAS_URI = os.environ.get('ATLAS_URI')
 SECRET_KEY = os.environ.get('SECRET_KEY')
 AWS_ACCESS_KEY = os.environ.get('AWS_ACCESS_KEY')
 AWS_SECRET_KEY = os.environ.get('AWS_SECRET_KEY')
+ALGORITHM = "HS256"
+ACCESS_TOKEN_EXPIRE_MINUTES = 60
+
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
 logger = logging.getLogger(__name__)
 mongodb_service = {}
@@ -40,6 +49,40 @@ sns_client = boto3.client(
 
 class SimpleResponseModel(BaseModel):
     message: str
+
+
+def verify_password(plain_password, hashed_password):
+    return pwd_context.verify(plain_password, hashed_password)
+
+
+def get_password_hash(password):
+    return pwd_context.hash(password)
+
+
+def authenticate_user_by_username(username: str, password: str):
+    user = mongodb_service["collection"].find_one(
+        {"username": username}
+    )
+
+    if user is None or not verify_password(password, user["password"]):
+        raise HTTPException(status_code=401,
+                            detail=f"Username or password is incorrect. "
+                                   f"Use Google SSO login if you signed up the account"
+                                   f"using Google SSO Sign On",
+                            headers={"WWW-Authenticate": "Bearer"})
+
+    return user
+
+
+def create_access_token(data: dict, expires_delta: Union[timedelta, None] = None):
+    to_encode = data.copy()
+    if expires_delta:
+        expire = datetime.utcnow() + expires_delta
+    else:
+        expire = datetime.utcnow() + timedelta(minutes=60)
+    to_encode.update({"exp": expire})
+    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+    return encoded_jwt
 
 
 @asynccontextmanager
@@ -60,7 +103,7 @@ async def get_logged_user(cookie: str = Security(APIKeyCookie(name="token"))) ->
 
 
 service = FastAPI(lifespan=lifespan)
-service.mount("/auth", auth_app)
+service.mount("/auth", google_auth_app)
 
 
 def publish_to_sns(subject, message):
@@ -106,12 +149,14 @@ async def root():
     status_code=status.HTTP_201_CREATED,
     response_model_by_alias=False
 )
-async def create_user(user: UserModel = Body(...)):
+async def create_user(user: UserWithPwd = Body(...)):
     if len(list(mongodb_service["collection"].find({"username": user.username}).limit(1))) == 1:
         raise HTTPException(status_code=409, detail=f"Username {user.username} is already taken")
 
     if len(list(mongodb_service["collection"].find({"email": user.email}).limit(1))) == 1:
         raise HTTPException(status_code=409, detail=f"Email {user.email} is already registered")
+
+    user.password = get_password_hash(user.password)
 
     new_user = mongodb_service["collection"].insert_one(
         user.model_dump(by_alias=True, exclude={"id"})
@@ -122,8 +167,8 @@ async def create_user(user: UserModel = Body(...)):
     )
 
     user_info = await build_user_info(user)
+    publish_to_sns(f"User {created_user['_id']} created successfully", user_info)
 
-    publish_to_sns(f"User {created_user['_id']} inserted successfully", user_info)
     return created_user
 
 
@@ -204,7 +249,6 @@ async def find_user_by_email(email: str):
 async def update_user_profile(user_id: str, user: UpdateUserModel = Body(...)):
     current_user = mongodb_service["collection"].find_one({"_id": ObjectId(user_id)})
     if len(current_user) == 1 and str(current_user[0]["_id"]) != user_id:
-        print(list(mongodb_service["collection"].find({"username": user.username}).limit(1)))
         raise HTTPException(status_code=409, detail=f"Username {user.username} is already taken")
 
     user = {
@@ -224,7 +268,7 @@ async def update_user_profile(user_id: str, user: UpdateUserModel = Body(...)):
                 'details': changes
             }
 
-            publish_to_sns(f"User data updated for user_id {user_id}", message)
+            publish_to_sns(f"User profile updated for user_id {user_id}", message)
             return update_result
         else:
             raise HTTPException(status_code=404, detail=f"User ID of {user_id} not found")
@@ -311,6 +355,16 @@ async def find_user_comment_by_id(user_id: str):
     return user
 
 
+@service.post("/token")
+async def login_for_access_token(form_data: Annotated[OAuth2PasswordRequestForm, Depends()]):
+    user = authenticate_user_by_username(form_data.username, form_data.password)
+    access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    access_token = create_access_token(
+        data={"sub": user["username"]}, expires_delta=access_token_expires
+    )
+    return {"access_token": access_token, "token_type": "bearer"}
+
+
 @service.get(
     "/protected",
     response_description="SSO login user",
@@ -319,9 +373,12 @@ async def find_user_comment_by_id(user_id: str):
 )
 async def protected_endpoint(user: OpenID = Depends(get_logged_user)):
     try:
+        # Return the user profile if the user already exists
         user_result = await find_user_by_email(user.email)
         return user_result
+
     except HTTPException:
+        # Create a new user based on the Google SSO user profile
         new_username = generate_username(1)[0]
         while len(list(mongodb_service["collection"].find({"username": new_username}).limit(1))) == 1:
             new_username = generate_username(1)[0]
@@ -340,10 +397,11 @@ async def protected_endpoint(user: OpenID = Depends(get_logged_user)):
             "group_member_list": [],
             "group_organizer_list": [],
             "event_organizer_list": [],
-            "event_participation_list": []
+            "event_participation_list": [],
+            "password": ''.join(random.choices(string.ascii_letters + string.digits, k=20))
         }
 
-        user_result = await create_user(UserModel(**new_user))
+        user_result = await create_user(UserWithPwd(**new_user))
         return user_result
 
 

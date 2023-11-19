@@ -22,23 +22,10 @@ class UserModel(BaseModel):
     group_organizer_list: List[str] = Field(...)
     event_organizer_list: List[str] = Field(...)
     event_participation_list: List[str] = Field(...)
-    model_config = ConfigDict(
-        populate_by_name=True,
-        arbitrary_types_allowed=True,
-        json_schema_extra={
-            "example": {
-                "username": "username@123",
-                "first_name": "Your First Name",
-                "last_name": "Your Last Name",
-                "email": "name@example.com",
-                "contact": "(123) 456-7890",
-                "location": "New York, NY",
-                "interests": ["Baseball", "Football", "Cycling"],
-                "age": 25,
-                "gender": "Male",
-            }
-        },
-    )
+
+
+class UserWithPwd(UserModel):
+    password: str
 
 
 class UserGroupModel(BaseModel):

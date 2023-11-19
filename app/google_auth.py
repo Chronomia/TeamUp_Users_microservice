@@ -13,23 +13,23 @@ CLIENT_SECRET = os.environ.get('CLIENT_SECRET')
 sso = GoogleSSO(client_id=CLIENT_ID,
                 client_secret=CLIENT_SECRET,
                 redirect_uri="http://127.0.0.1:8000/auth/callback")
-auth_app = FastAPI()
+google_auth_app = FastAPI()
 
 
-@auth_app.get("/login")
+@google_auth_app.get("/login")
 async def login():
     with sso:
         return await sso.get_login_redirect()
 
 
-@auth_app.get("/logout")
+@google_auth_app.get("/logout")
 async def logout():
     response = RedirectResponse(url="/logout-page")
     response.delete_cookie(key="token")
     return response
 
 
-@auth_app.get("/callback")
+@google_auth_app.get("/callback")
 async def login_callback(request: Request):
     with sso:
         openid = await sso.verify_and_process(request)
