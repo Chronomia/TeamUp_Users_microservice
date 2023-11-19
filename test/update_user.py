@@ -1,9 +1,9 @@
 import requests
 
-update_url = "http://localhost:8000/users/6557ed5752f6af7655975db2/update"
+update_url = "http://localhost:8000/users/65584096b11eb1c3d4462d0c/update"
 
 update_data = {
-    "age": 22,
+    "age": 23,
 }
 
 headers = {
@@ -11,6 +11,3 @@ headers = {
 }
 
 response = requests.put(update_url, json=update_data, headers=headers)
-
-print("Status Code:", response.status_code)
-print("Response:", response.json())

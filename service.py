@@ -23,19 +23,23 @@ from app.user import UserModel, UserGroupModel, UserEventModel, UpdateUserModel,
 
 ATLAS_URI = os.environ.get('ATLAS_URI')
 SECRET_KEY = os.environ.get('SECRET_KEY')
+aws_access_key = os.environ.get('aws_access_key_id')
+secret_access_key_aws = os.environ.get('aws_secret_access_key')
+
 logger = logging.getLogger(__name__)
 mongodb_service = {}
 
 TOPIC_ARN = os.environ.get('TOPIC_ARN')
 sns_client = boto3.client(
     'sns',
+    aws_access_key_id = aws_access_key,
+    aws_secret_access_key = secret_access_key_aws,
     region_name='us-east-1'
 )
 
 
 class SimpleResponseModel(BaseModel):
     message: str
-
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
