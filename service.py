@@ -68,7 +68,7 @@ def authenticate_user_by_username(username: str, password: str):
     if user is None or not verify_password(password, user["password"]):
         raise HTTPException(status_code=401,
                             detail=f"Username or password is incorrect. "
-                                   f"Use Google SSO login if you signed up the account"
+                                   f"Use Google SSO login if you signed up the account "
                                    f"using Google SSO Sign On",
                             headers={"WWW-Authenticate": "Bearer"})
 
