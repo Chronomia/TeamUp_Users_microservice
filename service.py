@@ -367,23 +367,23 @@ async def find_user_comment_by_id(user_id: str):
 async def login_for_access_token(form_data: Annotated[OAuth2PasswordRequestForm, Depends()]):
     user = authenticate_user_by_username(form_data.username, form_data.password)
     access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    data_for_token = {"username": user["username"],
+                      "email": user["email"]}
     access_token = create_access_token(
-        data={"sub": user["username"]}, expires_delta=access_token_expires
+        data=data_for_token, expires_delta=access_token_expires
     )
     return {"access_token": access_token, "token_type": "bearer"}
 
 
 @service.get(
-    "/protected",
+    "/google-sso-token",
     response_description="SSO login user",
-    response_model=UserModel,
     response_model_by_alias=False
 )
-async def protected_endpoint(user: OpenID = Depends(get_logged_user)):
+async def google_sso_access_token(user: OpenID = Depends(get_logged_user)):
     try:
         # Return the user profile if the user already exists
         user_result = await find_user_by_email(user.email)
-        return user_result
 
     except HTTPException:
         # Create a new user based on the Google SSO user profile
@@ -410,7 +410,15 @@ async def protected_endpoint(user: OpenID = Depends(get_logged_user)):
         }
 
         user_result = await create_user(UserWithPwd(**new_user))
-        return user_result
+
+    # Create a JWT token for normal TeamUP login
+    access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    data_for_token = {"username": user_result["username"],
+                      "email": user_result["email"]}
+    access_token = create_access_token(
+        data=data_for_token, expires_delta=access_token_expires
+    )
+    return {"access_token": access_token, "token_type": "bearer"}
 
 
 @service.get(

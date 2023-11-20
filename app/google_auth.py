@@ -50,9 +50,8 @@ async def login_callback(request: Request):
     expiration = datetime.datetime.utcnow() + datetime.timedelta(minutes=60)
     token = jwt.encode({"pld": openid.model_dump(), "exp": expiration, "sub": openid.id},
                        key=SECRET_KEY, algorithm="HS256")
-    response = RedirectResponse(url="/protected")
+    response = RedirectResponse(url="/google-sso-token")
     response.set_cookie(
         key="token", value=token, expires=expiration
     )  # This cookie will make sure /protected knows the user
-    # print(jwt.decode(token, key=SECRET_KEY, algorithms="HS256"))
     return response
