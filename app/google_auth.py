@@ -47,11 +47,11 @@ async def login_callback(request: Request):
             raise HTTPException(status_code=401, detail="Authentication failed")
 
     # Create a JWT with the user's OpenID
-    expiration = datetime.datetime.utcnow() + datetime.timedelta(minutes=60)
+    expiration = datetime.datetime.now(tz=datetime.timezone.utc) + datetime.timedelta(minutes=60)
     token = jwt.encode({"pld": openid.model_dump(), "exp": expiration, "sub": openid.id},
                        key=SECRET_KEY, algorithm="HS256")
     response = RedirectResponse(url="/google-sso-token")
     response.set_cookie(
         key="token", value=token, expires=expiration
-    )  # This cookie will make sure /protected knows the user
+    )  # This cookie will make sure /google-sso-token knows the user
     return response
