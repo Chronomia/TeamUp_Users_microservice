@@ -24,7 +24,8 @@ from passlib.context import CryptContext
 from starlette.middleware.cors import CORSMiddleware
 
 from app.google_auth import google_auth_app
-from app.user import UserModel, UserGroupModel, UserEventModel, UpdateUserModel, UserCollection, UserWithPwd
+from app.user import UserModel, UserGroupModel, UserEventModel, UpdateUserModel, UserCollection, UserWithPwd, \
+    UserFullModel
 
 ATLAS_URI = os.environ.get('ATLAS_URI')
 SECRET_KEY = os.environ.get('SECRET_KEY')
@@ -200,7 +201,7 @@ async def list_all_users(interest: Optional[str] = None, location: Optional[str]
 @service.get(
     "/users/id/{user_id}",
     response_description="Find a user by id",
-    response_model=UserModel,
+    response_model=UserFullModel,
     response_model_by_alias=False,
 )
 async def find_user_by_id(user_id: str):
@@ -217,7 +218,7 @@ async def find_user_by_id(user_id: str):
 @service.get(
     "/users/name/{username}",
     response_description="Find a user by username",
-    response_model=UserModel,
+    response_model=UserFullModel,
     response_model_by_alias=False,
 )
 async def find_user_by_username(username: str):
@@ -234,7 +235,7 @@ async def find_user_by_username(username: str):
 @service.get(
     "/users/email/{email}",
     response_description="Find a user by email",
-    response_model=UserModel,
+    response_model=UserFullModel,
     response_model_by_alias=False,
 )
 async def find_user_by_email(email: str):
@@ -251,7 +252,7 @@ async def find_user_by_email(email: str):
 @service.put(
     "/users/{user_id}/update",
     response_description="Update a user's profile by id",
-    response_model=UserModel,
+    response_model=UserFullModel,
     response_model_by_alias=False,
 )
 async def update_user_profile(user_id: str, user: UpdateUserModel = Body(...)):
@@ -346,21 +347,32 @@ async def find_user_group_by_id(user_id: str):
 
 
 @service.get(
-    "/users/{user_id}/comments",
-    response_description="Returns user's comment records by user id",
-    response_model=UserModel,
+    "/users/{user_id}/friends",
+    response_description="Returns user's friends by user id",
+    response_model=UserGroupModel,
     response_model_by_alias=False,
 )
-async def find_user_comment_by_id(user_id: str):
-    # TODO: To be integrated with the group and event microservice
+async def find_user_friends_by_id(user_id: str):
     user = mongodb_service["collection"].find_one(
-        {"_id": ObjectId(user_id)}
+        {"_id": ObjectId(user_id)},
+        {"friends": 1}
     )
 
     if user is None:
         raise HTTPException(status_code=404, detail=f"User ID of {user_id} not found")
 
     return user
+
+
+@service.get(
+    "/users/{user_id}/comments",
+    response_description="Returns user's comment records by user id",
+    response_model=None,
+    response_model_by_alias=False,
+)
+async def find_user_comment_by_id(user_id: str):
+    # TODO: To be integrated with the group and event microservice
+    pass
 
 
 @service.post("/token")
