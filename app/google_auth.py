@@ -47,13 +47,12 @@ async def login_callback(request: Request):
             raise HTTPException(status_code=401, detail="Authentication failed")
 
     # Create a JWT with the user's OpenID
-    expiration = datetime.datetime.now(tz=datetime.timezone.utc) + datetime.timedelta(days=1)
+    expiration = datetime.datetime.utcnow() + datetime.timedelta(minutes=60)
     token = jwt.encode({"pld": openid.model_dump(), "exp": expiration, "sub": openid.id},
                        key=SECRET_KEY, algorithm="HS256")
     response = RedirectResponse(url="/protected")
     response.set_cookie(
         key="token", value=token, expires=expiration
     )  # This cookie will make sure /protected knows the user
-    # decoded = jwt.decode(token, key=SECRET_KEY, algorithms="HS256")
-    # print(decoded)
+    # print(jwt.decode(token, key=SECRET_KEY, algorithms="HS256"))
     return response
