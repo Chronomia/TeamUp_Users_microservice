@@ -11,7 +11,7 @@ import certifi
 import uvicorn
 from botocore.exceptions import ClientError
 from bson import ObjectId
-from fastapi import FastAPI, Body, HTTPException, Security, Depends
+from fastapi import FastAPI, Body, HTTPException, Security, Depends, APIRouter
 from fastapi.security import APIKeyCookie, OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from fastapi_sso.sso.base import OpenID
 from jose import jwt
@@ -25,6 +25,7 @@ from starlette.middleware.cors import CORSMiddleware
 from app.google_auth import google_auth_app
 from app.user import UserModel, UserGroupModel, UserEventModel, UpdateUserModel, UserCollection, UserWithPwd, \
     UserFullModel, UpdateUsername
+from app import api_auth
 
 ATLAS_URI = os.environ.get('ATLAS_URI')
 SECRET_KEY = os.environ.get('SECRET_KEY')
@@ -103,8 +104,10 @@ async def get_logged_user(cookie: str = Security(APIKeyCookie(name="token"))) ->
         raise HTTPException(status_code=401, detail="Invalid authentication credentials") from error
 
 
+router = APIRouter(dependencies=[Depends(api_auth.validate_api_key)])
 service = FastAPI(lifespan=lifespan)
 service.mount("/auth", google_auth_app)
+service.include_router(router)
 service.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -164,7 +167,7 @@ async def root():
     return {'user_service_status': 'ONLINE'}
 
 
-@service.post(
+@router.post(
     "/users/",
     response_description="Add a new user",
     response_model=UserModel,
@@ -194,7 +197,7 @@ async def create_user(user: UserWithPwd = Body(...)):
     return created_user
 
 
-@service.get(
+@router.get(
     "/users/",
     response_description="List all users with pagination and optional filtering by interest/location",
     response_model=UserCollection,
@@ -211,7 +214,7 @@ async def list_all_users(interest: Optional[str] = None, location: Optional[str]
     return UserCollection(users=items)
 
 
-@service.get(
+@router.get(
     "/users/id/{user_id}",
     response_description="Find a user by id",
     response_model=UserFullModel,
@@ -228,7 +231,7 @@ async def find_user_by_id(user_id: str):
     return user
 
 
-@service.get(
+@router.get(
     "/users/name/{username}",
     response_description="Find a user by username",
     response_model=UserFullModel,
@@ -245,7 +248,7 @@ async def find_user_by_username(username: str):
     return user
 
 
-@service.get(
+@router.get(
     "/users/email/{email}",
     response_description="Find a user by email",
     response_model=UserFullModel,
@@ -262,7 +265,7 @@ async def find_user_by_email(email: str):
     return user
 
 
-@service.put(
+@router.put(
     "/users/{user_id}/update",
     response_description="Update a user's profile by id",
     response_model=UserFullModel,
@@ -299,7 +302,7 @@ async def update_user_profile(user_id: str, user: UpdateUserModel = Body(...)):
     raise HTTPException(status_code=404, detail=f"User ID of {user_id} not found")
 
 
-@service.put(
+@router.put(
     "/users/{user_id}/change-username",
     response_description="Update username",
     response_model=UserFullModel,
@@ -326,7 +329,7 @@ async def change_username(user_id: str, new_username: UpdateUsername = Body(...)
     return update_result
 
 
-@service.delete(
+@router.delete(
     "/users/{user_id}",
     response_description="Delete a user",
     response_model=SimpleResponseModel,
@@ -348,7 +351,7 @@ async def delete_user(user_id: str):
     return {"message": "User deleted successfully"}
 
 
-@service.get(
+@router.get(
     "/users/{user_id}/events",
     response_description="Returns user's event records by user id",
     response_model=UserEventModel,
@@ -366,7 +369,7 @@ async def find_user_event_by_id(user_id: str):
     return user
 
 
-@service.get(
+@router.get(
     "/users/{user_id}/groups",
     response_description="Returns user's group records by user id",
     response_model=UserGroupModel,
@@ -384,7 +387,7 @@ async def find_user_group_by_id(user_id: str):
     return user
 
 
-@service.get(
+@router.get(
     "/users/{user_id}/friends",
     response_description="Returns user's friends by user id",
     response_model=UserGroupModel,
@@ -402,7 +405,7 @@ async def find_user_friends_by_id(user_id: str):
     return user
 
 
-@service.get(
+@router.get(
     "/users/{user_id}/comments",
     response_description="Returns user's comment records by user id",
     response_model=None,
@@ -413,7 +416,7 @@ async def find_user_comment_by_id(user_id: str):
     pass
 
 
-@service.post("/token")
+@router.post("/token")
 async def login_for_access_token(form_data: Annotated[OAuth2PasswordRequestForm, Depends()]):
     user = authenticate_user_by_username(form_data.username, form_data.password)
     access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
