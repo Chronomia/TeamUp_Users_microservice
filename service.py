@@ -105,66 +105,6 @@ async def get_logged_user(cookie: str = Security(APIKeyCookie(name="token"))) ->
 
 
 router = APIRouter(dependencies=[Depends(api_auth.validate_api_key)])
-service = FastAPI(lifespan=lifespan)
-service.mount("/auth", google_auth_app)
-service.include_router(router)
-service.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-
-def lambda_handler(action, subject, context):
-    message = ""
-    if action == "create":
-        message += "A new user has been registered with the following details:\n"
-        for key, value in context.items():
-            message += f"{key.capitalize()}: {value}\n"
-    elif action == 'update':
-        message += "User profile has been update with the following details:\n"
-        for key, change in context["details"].items():
-            old_value = change["old"]
-            new_value = change["new"]
-            message += f"{key.capitalize()} changed from {old_value} to {new_value}.\n"
-    elif action == "delete":
-        message += "A user profile has been deleted.\n"
-        for key, value in context.items():
-            message += f"{key.capitalize()}: {value}\n"
-    try:
-        # if "_id" in context:
-        #     context["_id"] = str(context["_id"])
-        response = sns_client.publish(
-            TopicArn=TOPIC_ARN,
-            Subject=subject,
-            Message=message
-        )
-        return response
-    except ClientError as e:
-        print(f"Error publishing to SNS: {e}")
-        raise
-
-
-async def build_user_info(user):
-    user_info = {
-        "username": user.username,
-        "first_name": user.first_name,
-        "last_name": user.last_name,
-        "email": user.email,
-        "contact": user.contact,
-        "location": user.location,
-        "interests": user.interests,
-        "age": user.age,
-        "gender": user.gender,
-    }
-    return user_info
-
-
-@service.get('/')
-async def root():
-    return {'user_service_status': 'ONLINE'}
 
 
 @router.post(
@@ -426,6 +366,68 @@ async def login_for_access_token(form_data: Annotated[OAuth2PasswordRequestForm,
         data=data_for_token, expires_delta=access_token_expires
     )
     return {"access_token": access_token, "token_type": "bearer"}
+
+
+service = FastAPI(lifespan=lifespan)
+service.mount("/auth", google_auth_app)
+service.include_router(router=router)
+service.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+def lambda_handler(action, subject, context):
+    message = ""
+    if action == "create":
+        message += "A new user has been registered with the following details:\n"
+        for key, value in context.items():
+            message += f"{key.capitalize()}: {value}\n"
+    elif action == 'update':
+        message += "User profile has been update with the following details:\n"
+        for key, change in context["details"].items():
+            old_value = change["old"]
+            new_value = change["new"]
+            message += f"{key.capitalize()} changed from {old_value} to {new_value}.\n"
+    elif action == "delete":
+        message += "A user profile has been deleted.\n"
+        for key, value in context.items():
+            message += f"{key.capitalize()}: {value}\n"
+    try:
+        # if "_id" in context:
+        #     context["_id"] = str(context["_id"])
+        response = sns_client.publish(
+            TopicArn=TOPIC_ARN,
+            Subject=subject,
+            Message=message
+        )
+        return response
+    except ClientError as e:
+        print(f"Error publishing to SNS: {e}")
+        raise
+
+
+async def build_user_info(user):
+    user_info = {
+        "username": user.username,
+        "first_name": user.first_name,
+        "last_name": user.last_name,
+        "email": user.email,
+        "contact": user.contact,
+        "location": user.location,
+        "interests": user.interests,
+        "age": user.age,
+        "gender": user.gender,
+    }
+    return user_info
+
+
+@service.get('/')
+async def root():
+    return {'user_service_status': 'ONLINE'}
 
 
 @service.get(
