@@ -298,9 +298,13 @@ async def change_username(user_id: str, new_username: UpdateUsername = Body(...)
     if len(current_user) == 1 and str(current_user[0]["_id"]) != user_id:
         raise HTTPException(status_code=409, detail=f"Username {new_username.username} is already taken")
 
+    user = {
+        k: v for k, v in new_username.model_dump(by_alias=True).items() if v is not None
+    }
+
     update_result = mongodb_service["collection"].find_one_and_update(
         {"_id": ObjectId(user_id)},
-        {"$set": new_username.model_dump(by_alias=True).items()},
+        {"$set": user},
         return_document=ReturnDocument.AFTER,
     )
 
