@@ -47,12 +47,12 @@ class UserFriendsModel(BaseModel):
 
 
 class UpdateUserModel(BaseModel):
-    first_name: Optional[str] = Field(..., max_length=30)
-    last_name: Optional[str] = Field(..., max_length=30)
+    first_name: Optional[str] = Field(default=None, max_length=30)
+    last_name: Optional[str] = Field(default=None, max_length=30)
     contact: Optional[str] = None
     location: Optional[str] = None
     interests: Optional[List[str]] = None
-    age: Optional[int] = Field(..., ge=13, le=150)
+    age: Optional[int] = Field(default=None, ge=13, le=150)
     gender: Optional[str] = None
     friends: Optional[List[str]] = None
     group_member_list: Optional[List[str]] = None
