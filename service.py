@@ -24,7 +24,7 @@ from starlette.middleware.cors import CORSMiddleware
 
 from app.google_auth import google_auth_app
 from app.user import UserModel, UserGroupModel, UserEventModel, UpdateUserModel, UserCollection, UserWithPwd, \
-    UserFullModel, UpdateUsername
+    UserFullModel, UpdateUsername, UserWithJWT
 
 ATLAS_URI = os.environ.get('ATLAS_URI')
 SECRET_KEY = os.environ.get('SECRET_KEY')
@@ -302,7 +302,7 @@ async def update_user_profile(user_id: str, user: UpdateUserModel = Body(...)):
 @service.put(
     "/users/{user_id}/change-username",
     response_description="Update username",
-    response_model=UserFullModel,
+    response_model=UserWithJWT,
     response_model_by_alias=False,
 )
 async def change_username(user_id: str, new_username: UpdateUsername = Body(...)):
