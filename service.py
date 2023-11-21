@@ -80,7 +80,7 @@ def create_access_token(data: dict, expires_delta: Union[timedelta, None] = None
     if expires_delta:
         expire = datetime.utcnow() + expires_delta
     else:
-        expire = datetime.utcnow() + timedelta(minutes=60)
+        expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     to_encode.update({"exp": expire})
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
@@ -306,6 +306,9 @@ async def update_user_profile(user_id: str, user: UpdateUserModel = Body(...)):
     response_model_by_alias=False,
 )
 async def change_username(user_id: str, new_username: UpdateUsername = Body(...)):
+    """
+    ATTENTION: Changing username will automatically issue a new JWT token for access credential.
+    """
     current_user = mongodb_service["collection"].find_one({"_id": ObjectId(user_id)})
     if current_user is None:
         raise HTTPException(status_code=404, detail=f"User ID of {user_id} not found")
@@ -323,6 +326,10 @@ async def change_username(user_id: str, new_username: UpdateUsername = Body(...)
         {"$set": user},
         return_document=ReturnDocument.AFTER,
     )
+
+    data_for_token = {"username": update_result["username"],
+                      "email": update_result["email"]}
+    update_result["access_token"] = create_access_token(data=data_for_token)
     return update_result
 
 
