@@ -12,6 +12,7 @@ import uvicorn
 from botocore.exceptions import ClientError
 from bson import ObjectId
 from fastapi import FastAPI, Body, HTTPException, Security, Depends
+from fastapi.routing import APIRouter
 from fastapi.security import APIKeyCookie, OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from fastapi_sso.sso.base import OpenID
 from jose import jwt
@@ -22,6 +23,7 @@ from random_username.generate import generate_username
 from starlette import status
 from starlette.middleware.cors import CORSMiddleware
 
+from app import api_auth
 from app.google_auth import google_auth_app
 from app.user import UserModel, UserGroupModel, UserEventModel, UpdateUserModel, UserCollection, UserWithPwd, \
     UserFullModel, UpdateUsername, UserWithJWT
@@ -103,8 +105,29 @@ async def lifespan(app: FastAPI):
     mongodb_service.clear()
 
 
+route = APIRouter(dependencies=[Depends(api_auth.validate_api_key)])
+
+
+@route.get(
+    "/users/",
+    response_description="List all users with pagination and optional filtering by interest/location",
+    response_model=UserCollection,
+    response_model_by_alias=False,
+)
+async def list_all_users(interest: Optional[str] = None, location: Optional[str] = None, page: int = 1, limit: int = 5):
+    query = {}
+    if interest:
+        query["interests"] = {"$in": [interest]}
+    if location:
+        query["location"] = location
+
+    items = mongodb_service["collection"].find(query).skip((page - 1) * limit).limit(limit)
+    return UserCollection(users=items)
+
+
 service = FastAPI(lifespan=lifespan)
 service.mount("/auth", google_auth_app)
+service.include_router(route)
 service.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -192,23 +215,6 @@ async def create_user(user: UserWithPwd = Body(...)):
     lambda_handler("create", f"User {created_user['_id']} created successfully", user_info)
 
     return created_user
-
-
-@service.get(
-    "/users/",
-    response_description="List all users with pagination and optional filtering by interest/location",
-    response_model=UserCollection,
-    response_model_by_alias=False,
-)
-async def list_all_users(interest: Optional[str] = None, location: Optional[str] = None, page: int = 1, limit: int = 5):
-    query = {}
-    if interest:
-        query["interests"] = {"$in": [interest]}
-    if location:
-        query["location"] = location
-
-    items = mongodb_service["collection"].find(query).skip((page - 1) * limit).limit(limit)
-    return UserCollection(users=items)
 
 
 @service.get(
