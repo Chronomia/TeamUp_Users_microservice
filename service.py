@@ -11,7 +11,7 @@ import certifi
 import uvicorn
 from botocore.exceptions import ClientError
 from bson import ObjectId
-from fastapi import FastAPI, Body, HTTPException, Security, Depends, APIRouter
+from fastapi import FastAPI, Body, HTTPException, Security, Depends
 from fastapi.security import APIKeyCookie, OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from fastapi_sso.sso.base import OpenID
 from jose import jwt
@@ -25,7 +25,6 @@ from starlette.middleware.cors import CORSMiddleware
 from app.google_auth import google_auth_app
 from app.user import UserModel, UserGroupModel, UserEventModel, UpdateUserModel, UserCollection, UserWithPwd, \
     UserFullModel, UpdateUsername
-from app import api_auth
 
 ATLAS_URI = os.environ.get('ATLAS_URI')
 SECRET_KEY = os.environ.get('SECRET_KEY')
@@ -87,6 +86,14 @@ def create_access_token(data: dict, expires_delta: Union[timedelta, None] = None
     return encoded_jwt
 
 
+async def get_logged_user(cookie: str = Security(APIKeyCookie(name="token"))) -> OpenID:
+    try:
+        claims = jwt.decode(cookie, key=SECRET_KEY, algorithms=["HS256"])
+        return OpenID(**claims["pld"])
+    except Exception as error:
+        raise HTTPException(status_code=401, detail="Invalid authentication credentials") from error
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     mongodb_service["client"] = MongoClient(ATLAS_URI, tlsCAFile=certifi.where())
@@ -96,281 +103,8 @@ async def lifespan(app: FastAPI):
     mongodb_service.clear()
 
 
-async def get_logged_user(cookie: str = Security(APIKeyCookie(name="token"))) -> OpenID:
-    try:
-        claims = jwt.decode(cookie, key=SECRET_KEY, algorithms=["HS256"])
-        return OpenID(**claims["pld"])
-    except Exception as error:
-        raise HTTPException(status_code=401, detail="Invalid authentication credentials") from error
-
-
-router = APIRouter(dependencies=[Depends(api_auth.validate_api_key)])
-
-
-@router.post(
-    "/users/",
-    response_description="Add a new user",
-    response_model=UserModel,
-    status_code=status.HTTP_201_CREATED,
-    response_model_by_alias=False
-)
-async def create_user(user: UserWithPwd = Body(...)):
-    if len(list(mongodb_service["collection"].find({"username": user.username}).limit(1))) == 1:
-        raise HTTPException(status_code=409, detail=f"Username {user.username} is already taken")
-
-    if len(list(mongodb_service["collection"].find({"email": user.email}).limit(1))) == 1:
-        raise HTTPException(status_code=409, detail=f"Email {user.email} is already registered")
-
-    user.password = get_password_hash(user.password)
-
-    new_user = mongodb_service["collection"].insert_one(
-        user.model_dump(by_alias=True, exclude={"id"})
-    )
-
-    created_user = mongodb_service["collection"].find_one(
-        {"_id": new_user.inserted_id}
-    )
-
-    user_info = await build_user_info(user)
-    lambda_handler("create", f"User {created_user['_id']} created successfully", user_info)
-
-    return created_user
-
-
-@router.get(
-    "/users/",
-    response_description="List all users with pagination and optional filtering by interest/location",
-    response_model=UserCollection,
-    response_model_by_alias=False,
-)
-async def list_all_users(interest: Optional[str] = None, location: Optional[str] = None, page: int = 1, limit: int = 5):
-    query = {}
-    if interest:
-        query["interests"] = {"$in": [interest]}
-    if location:
-        query["location"] = location
-
-    items = mongodb_service["collection"].find(query).skip((page - 1) * limit).limit(limit)
-    return UserCollection(users=items)
-
-
-@router.get(
-    "/users/id/{user_id}",
-    response_description="Find a user by id",
-    response_model=UserFullModel,
-    response_model_by_alias=False,
-)
-async def find_user_by_id(user_id: str):
-    user = mongodb_service["collection"].find_one(
-        {"_id": ObjectId(user_id)}
-    )
-
-    if user is None:
-        raise HTTPException(status_code=404, detail=f"User ID of {user_id} not found")
-
-    return user
-
-
-@router.get(
-    "/users/name/{username}",
-    response_description="Find a user by username",
-    response_model=UserFullModel,
-    response_model_by_alias=False,
-)
-async def find_user_by_username(username: str):
-    user = mongodb_service["collection"].find_one(
-        {"username": username}
-    )
-
-    if user is None:
-        raise HTTPException(status_code=404, detail=f"Username {username} not found")
-
-    return user
-
-
-@router.get(
-    "/users/email/{email}",
-    response_description="Find a user by email",
-    response_model=UserFullModel,
-    response_model_by_alias=False,
-)
-async def find_user_by_email(email: str):
-    user = mongodb_service["collection"].find_one(
-        {"email": email}
-    )
-
-    if user is None:
-        raise HTTPException(status_code=404, detail=f"Email {email} is not associated with a user account")
-
-    return user
-
-
-@router.put(
-    "/users/{user_id}/update",
-    response_description="Update a user's profile by id",
-    response_model=UserFullModel,
-    response_model_by_alias=False,
-)
-async def update_user_profile(user_id: str, user: UpdateUserModel = Body(...)):
-    current_user = mongodb_service["collection"].find_one({"_id": ObjectId(user_id)})
-
-    user = {
-        k: v for k, v in user.model_dump(by_alias=True).items() if v is not None
-    }
-
-    if len(user) >= 1:
-        update_result = mongodb_service["collection"].find_one_and_update(
-            {"_id": ObjectId(user_id)},
-            {"$set": user},
-            return_document=ReturnDocument.AFTER,
-        )
-
-        changes = {k: {"old": current_user.get(k), 'new': user[k]} for k in user}
-        if update_result is not None:
-            message = {
-                'details': changes
-            }
-
-            lambda_handler("update", f"User profile updated for user_id {user_id}", message)
-            return update_result
-        else:
-            raise HTTPException(status_code=404, detail=f"User ID of {user_id} not found")
-
-    if (existing_user := mongodb_service["collection"].find_one({"_id": ObjectId(user_id)})) is not None:
-        return existing_user
-
-    raise HTTPException(status_code=404, detail=f"User ID of {user_id} not found")
-
-
-@router.put(
-    "/users/{user_id}/change-username",
-    response_description="Update username",
-    response_model=UserFullModel,
-    response_model_by_alias=False,
-)
-async def change_username(user_id: str, new_username: UpdateUsername = Body(...)):
-    current_user = mongodb_service["collection"].find_one({"_id": ObjectId(user_id)})
-    if current_user is None:
-        raise HTTPException(status_code=404, detail=f"User ID of {user_id} not found")
-
-    existing_user = list(mongodb_service["collection"].find({"username": new_username.username}).limit(1))
-    if len(existing_user) == 1 and str(existing_user[0]["_id"]) != user_id:
-        raise HTTPException(status_code=409, detail=f"Username {new_username.username} is already taken")
-
-    user = {
-        k: v for k, v in new_username.model_dump(by_alias=True).items() if v is not None
-    }
-
-    update_result = mongodb_service["collection"].find_one_and_update(
-        {"_id": ObjectId(user_id)},
-        {"$set": user},
-        return_document=ReturnDocument.AFTER,
-    )
-    return update_result
-
-
-@router.delete(
-    "/users/{user_id}",
-    response_description="Delete a user",
-    response_model=SimpleResponseModel,
-    response_model_by_alias=False
-)
-async def delete_user(user_id: str):
-    user = mongodb_service["collection"].find_one({"_id": ObjectId(user_id)})
-    if user is None:
-        raise HTTPException(status_code=404, detail=f"User with ID {user_id} not found")
-
-    delete_result = mongodb_service["collection"].delete_one({"_id": ObjectId(user_id)})
-
-    if delete_result.deleted_count == 0:
-        raise HTTPException(status_code=404, detail=f"User with ID {user_id} not found")
-
-    user_info = await build_user_info(user)
-
-    lambda_handler("delete", f"User {user_id} has been deleted", user_info)
-    return {"message": "User deleted successfully"}
-
-
-@router.get(
-    "/users/{user_id}/events",
-    response_description="Returns user's event records by user id",
-    response_model=UserEventModel,
-    response_model_by_alias=False
-)
-async def find_user_event_by_id(user_id: str):
-    user = mongodb_service["collection"].find_one(
-        {"_id": ObjectId(user_id)},
-        {"event_organizer_list": 1, "event_participation_list": 1}
-    )
-
-    if user is None:
-        raise HTTPException(status_code=404, detail=f"User ID of {user_id} not found")
-
-    return user
-
-
-@router.get(
-    "/users/{user_id}/groups",
-    response_description="Returns user's group records by user id",
-    response_model=UserGroupModel,
-    response_model_by_alias=False,
-)
-async def find_user_group_by_id(user_id: str):
-    user = mongodb_service["collection"].find_one(
-        {"_id": ObjectId(user_id)},
-        {"group_organizer_list": 1, "group_member_list": 1}
-    )
-
-    if user is None:
-        raise HTTPException(status_code=404, detail=f"User ID of {user_id} not found")
-
-    return user
-
-
-@router.get(
-    "/users/{user_id}/friends",
-    response_description="Returns user's friends by user id",
-    response_model=UserGroupModel,
-    response_model_by_alias=False,
-)
-async def find_user_friends_by_id(user_id: str):
-    user = mongodb_service["collection"].find_one(
-        {"_id": ObjectId(user_id)},
-        {"friends": 1}
-    )
-
-    if user is None:
-        raise HTTPException(status_code=404, detail=f"User ID of {user_id} not found")
-
-    return user
-
-
-@router.get(
-    "/users/{user_id}/comments",
-    response_description="Returns user's comment records by user id",
-    response_model=None,
-    response_model_by_alias=False,
-)
-async def find_user_comment_by_id(user_id: str):
-    # TODO: To be integrated with the group and event microservice
-    pass
-
-
-@router.post("/token")
-async def login_for_access_token(form_data: Annotated[OAuth2PasswordRequestForm, Depends()]):
-    user = authenticate_user_by_username(form_data.username, form_data.password)
-    access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-    data_for_token = {"username": user["username"],
-                      "email": user["email"]}
-    access_token = create_access_token(
-        data=data_for_token, expires_delta=access_token_expires
-    )
-    return {"access_token": access_token, "token_type": "bearer"}
-
-
 service = FastAPI(lifespan=lifespan)
 service.mount("/auth", google_auth_app)
-service.include_router(router=router)
 service.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -428,6 +162,267 @@ async def build_user_info(user):
 @service.get('/')
 async def root():
     return {'user_service_status': 'ONLINE'}
+
+
+@service.post(
+    "/users/",
+    response_description="Add a new user",
+    response_model=UserModel,
+    status_code=status.HTTP_201_CREATED,
+    response_model_by_alias=False
+)
+async def create_user(user: UserWithPwd = Body(...)):
+    if len(list(mongodb_service["collection"].find({"username": user.username}).limit(1))) == 1:
+        raise HTTPException(status_code=409, detail=f"Username {user.username} is already taken")
+
+    if len(list(mongodb_service["collection"].find({"email": user.email}).limit(1))) == 1:
+        raise HTTPException(status_code=409, detail=f"Email {user.email} is already registered")
+
+    user.password = get_password_hash(user.password)
+
+    new_user = mongodb_service["collection"].insert_one(
+        user.model_dump(by_alias=True, exclude={"id"})
+    )
+
+    created_user = mongodb_service["collection"].find_one(
+        {"_id": new_user.inserted_id}
+    )
+
+    user_info = await build_user_info(user)
+    lambda_handler("create", f"User {created_user['_id']} created successfully", user_info)
+
+    return created_user
+
+
+@service.get(
+    "/users/",
+    response_description="List all users with pagination and optional filtering by interest/location",
+    response_model=UserCollection,
+    response_model_by_alias=False,
+)
+async def list_all_users(interest: Optional[str] = None, location: Optional[str] = None, page: int = 1, limit: int = 5):
+    query = {}
+    if interest:
+        query["interests"] = {"$in": [interest]}
+    if location:
+        query["location"] = location
+
+    items = mongodb_service["collection"].find(query).skip((page - 1) * limit).limit(limit)
+    return UserCollection(users=items)
+
+
+@service.get(
+    "/users/id/{user_id}",
+    response_description="Find a user by id",
+    response_model=UserFullModel,
+    response_model_by_alias=False,
+)
+async def find_user_by_id(user_id: str):
+    user = mongodb_service["collection"].find_one(
+        {"_id": ObjectId(user_id)}
+    )
+
+    if user is None:
+        raise HTTPException(status_code=404, detail=f"User ID of {user_id} not found")
+
+    return user
+
+
+@service.get(
+    "/users/name/{username}",
+    response_description="Find a user by username",
+    response_model=UserFullModel,
+    response_model_by_alias=False,
+)
+async def find_user_by_username(username: str):
+    user = mongodb_service["collection"].find_one(
+        {"username": username}
+    )
+
+    if user is None:
+        raise HTTPException(status_code=404, detail=f"Username {username} not found")
+
+    return user
+
+
+@service.get(
+    "/users/email/{email}",
+    response_description="Find a user by email",
+    response_model=UserFullModel,
+    response_model_by_alias=False,
+)
+async def find_user_by_email(email: str):
+    user = mongodb_service["collection"].find_one(
+        {"email": email}
+    )
+
+    if user is None:
+        raise HTTPException(status_code=404, detail=f"Email {email} is not associated with a user account")
+
+    return user
+
+
+@service.put(
+    "/users/{user_id}/update",
+    response_description="Update a user's profile by id",
+    response_model=UserFullModel,
+    response_model_by_alias=False,
+)
+async def update_user_profile(user_id: str, user: UpdateUserModel = Body(...)):
+    current_user = mongodb_service["collection"].find_one({"_id": ObjectId(user_id)})
+
+    user = {
+        k: v for k, v in user.model_dump(by_alias=True).items() if v is not None
+    }
+
+    if len(user) >= 1:
+        update_result = mongodb_service["collection"].find_one_and_update(
+            {"_id": ObjectId(user_id)},
+            {"$set": user},
+            return_document=ReturnDocument.AFTER,
+        )
+
+        changes = {k: {"old": current_user.get(k), 'new': user[k]} for k in user}
+        if update_result is not None:
+            message = {
+                'details': changes
+            }
+
+            lambda_handler("update", f"User profile updated for user_id {user_id}", message)
+            return update_result
+        else:
+            raise HTTPException(status_code=404, detail=f"User ID of {user_id} not found")
+
+    if (existing_user := mongodb_service["collection"].find_one({"_id": ObjectId(user_id)})) is not None:
+        return existing_user
+
+    raise HTTPException(status_code=404, detail=f"User ID of {user_id} not found")
+
+
+@service.put(
+    "/users/{user_id}/change-username",
+    response_description="Update username",
+    response_model=UserFullModel,
+    response_model_by_alias=False,
+)
+async def change_username(user_id: str, new_username: UpdateUsername = Body(...)):
+    current_user = mongodb_service["collection"].find_one({"_id": ObjectId(user_id)})
+    if current_user is None:
+        raise HTTPException(status_code=404, detail=f"User ID of {user_id} not found")
+
+    existing_user = list(mongodb_service["collection"].find({"username": new_username.username}).limit(1))
+    if len(existing_user) == 1 and str(existing_user[0]["_id"]) != user_id:
+        raise HTTPException(status_code=409, detail=f"Username {new_username.username} is already taken")
+
+    user = {
+        k: v for k, v in new_username.model_dump(by_alias=True).items() if v is not None
+    }
+
+    update_result = mongodb_service["collection"].find_one_and_update(
+        {"_id": ObjectId(user_id)},
+        {"$set": user},
+        return_document=ReturnDocument.AFTER,
+    )
+    return update_result
+
+
+@service.delete(
+    "/users/{user_id}",
+    response_description="Delete a user",
+    response_model=SimpleResponseModel,
+    response_model_by_alias=False
+)
+async def delete_user(user_id: str):
+    user = mongodb_service["collection"].find_one({"_id": ObjectId(user_id)})
+    if user is None:
+        raise HTTPException(status_code=404, detail=f"User with ID {user_id} not found")
+
+    delete_result = mongodb_service["collection"].delete_one({"_id": ObjectId(user_id)})
+
+    if delete_result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail=f"User with ID {user_id} not found")
+
+    user_info = await build_user_info(user)
+
+    lambda_handler("delete", f"User {user_id} has been deleted", user_info)
+    return {"message": "User deleted successfully"}
+
+
+@service.get(
+    "/users/{user_id}/events",
+    response_description="Returns user's event records by user id",
+    response_model=UserEventModel,
+    response_model_by_alias=False
+)
+async def find_user_event_by_id(user_id: str):
+    user = mongodb_service["collection"].find_one(
+        {"_id": ObjectId(user_id)},
+        {"event_organizer_list": 1, "event_participation_list": 1}
+    )
+
+    if user is None:
+        raise HTTPException(status_code=404, detail=f"User ID of {user_id} not found")
+
+    return user
+
+
+@service.get(
+    "/users/{user_id}/groups",
+    response_description="Returns user's group records by user id",
+    response_model=UserGroupModel,
+    response_model_by_alias=False,
+)
+async def find_user_group_by_id(user_id: str):
+    user = mongodb_service["collection"].find_one(
+        {"_id": ObjectId(user_id)},
+        {"group_organizer_list": 1, "group_member_list": 1}
+    )
+
+    if user is None:
+        raise HTTPException(status_code=404, detail=f"User ID of {user_id} not found")
+
+    return user
+
+
+@service.get(
+    "/users/{user_id}/friends",
+    response_description="Returns user's friends by user id",
+    response_model=UserGroupModel,
+    response_model_by_alias=False,
+)
+async def find_user_friends_by_id(user_id: str):
+    user = mongodb_service["collection"].find_one(
+        {"_id": ObjectId(user_id)},
+        {"friends": 1}
+    )
+
+    if user is None:
+        raise HTTPException(status_code=404, detail=f"User ID of {user_id} not found")
+
+    return user
+
+
+@service.get(
+    "/users/{user_id}/comments",
+    response_description="Returns user's comment records by user id",
+    response_model=None,
+    response_model_by_alias=False,
+)
+async def find_user_comment_by_id(user_id: str):
+    # TODO: To be integrated with the group and event microservice
+    pass
+
+
+@service.post("/token")
+async def login_for_access_token(form_data: Annotated[OAuth2PasswordRequestForm, Depends()]):
+    user = authenticate_user_by_username(form_data.username, form_data.password)
+    access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    data_for_token = {"username": user["username"],
+                      "email": user["email"]}
+    access_token = create_access_token(
+        data=data_for_token, expires_delta=access_token_expires
+    )
+    return {"access_token": access_token, "token_type": "bearer"}
 
 
 @service.get(
