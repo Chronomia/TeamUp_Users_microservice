@@ -133,8 +133,8 @@ def lambda_handler(action, subject, context):
         for key, value in context.items():
             message += f"{key.capitalize()}: {value}\n"
     try:
-        #if "_id" in context:
-        #    context["_id"] = str(context["_id"])
+        # if "_id" in context:
+        #     context["_id"] = str(context["_id"])
         response = sns_client.publish(
             TopicArn=TOPIC_ARN,
             Subject=subject,
