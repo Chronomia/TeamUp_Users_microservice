@@ -47,7 +47,6 @@ class UserFriendsModel(BaseModel):
 
 
 class UpdateUserModel(BaseModel):
-    username: Optional[str] = None
     first_name: Optional[str] = None
     last_name: Optional[str] = None
     contact: Optional[str] = None
@@ -60,6 +59,10 @@ class UpdateUserModel(BaseModel):
     group_organizer_list: Optional[List[str]] = None
     event_organizer_list: Optional[List[str]] = None
     event_participation_list: Optional[List[str]] = None
+
+
+class UpdateUsername(BaseModel):
+    username: str = Field(..., min_length=3, max_length=30)
 
 
 class UserCollection(BaseModel):

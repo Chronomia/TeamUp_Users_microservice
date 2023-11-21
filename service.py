@@ -26,7 +26,7 @@ from starlette.middleware.cors import CORSMiddleware
 
 from app.google_auth import google_auth_app
 from app.user import UserModel, UserGroupModel, UserEventModel, UpdateUserModel, UserCollection, UserWithPwd, \
-    UserFullModel
+    UserFullModel, UpdateUsername
 
 ATLAS_URI = os.environ.get('ATLAS_URI')
 SECRET_KEY = os.environ.get('SECRET_KEY')
@@ -257,14 +257,8 @@ async def find_user_by_email(email: str):
     response_model_by_alias=False,
 )
 async def update_user_profile(user_id: str, user: UpdateUserModel = Body(...)):
-    print("Yes Yes")
-
     current_user = mongodb_service["collection"].find_one({"_id": ObjectId(user_id)})
-    print("Yes Yes")
-    if len(current_user) == 1 and str(current_user[0]["_id"]) != user_id:
-        raise HTTPException(status_code=409, detail=f"Username {user.username} is already taken")
 
-    print("Yes Yes")
     user = {
         k: v for k, v in user.model_dump(by_alias=True).items() if v is not None
     }
@@ -291,6 +285,26 @@ async def update_user_profile(user_id: str, user: UpdateUserModel = Body(...)):
         return existing_user
 
     raise HTTPException(status_code=404, detail=f"User ID of {user_id} not found")
+
+
+@service.put(
+    "/users/{user_id}/change-username",
+    response_description="Update username",
+    response_model=UserFullModel,
+    response_model_by_alias=False,
+)
+async def change_username(user_id: str, new_username: UpdateUsername = Body(...)):
+    current_user = mongodb_service["collection"].find_one({"_id": ObjectId(user_id)})
+    if len(current_user) == 1 and str(current_user[0]["_id"]) != user_id:
+        raise HTTPException(status_code=409, detail=f"Username {new_username.username} is already taken")
+
+    update_result = mongodb_service["collection"].find_one_and_update(
+        {"_id": ObjectId(user_id)},
+        {"$set": new_username.model_dump(by_alias=True).items()},
+        return_document=ReturnDocument.AFTER,
+    )
+
+    return update_result
 
 
 @service.delete(
