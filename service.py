@@ -294,6 +294,10 @@ async def update_user_profile(user_id: str, user: UpdateUserModel = Body(...)):
     response_model_by_alias=False,
 )
 async def change_username(user_id: str, new_username: UpdateUsername = Body(...)):
+    current_user = mongodb_service["collection"].find_one({"_id": ObjectId(user_id)})
+    if current_user is None:
+        raise HTTPException(status_code=404, detail=f"User ID of {user_id} not found")
+
     existing_user = list(mongodb_service["collection"].find({"username": new_username.username}).limit(1))
     if len(existing_user) == 1 and str(existing_user[0]["_id"]) != user_id:
         raise HTTPException(status_code=409, detail=f"Username {new_username.username} is already taken")
