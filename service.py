@@ -257,34 +257,35 @@ async def find_user_by_email(email: str):
     response_model_by_alias=False,
 )
 async def update_user_profile(user_id: str, user: UpdateUserModel = Body(...)):
+    print("Yes Yes")
+
     current_user = mongodb_service["collection"].find_one({"_id": ObjectId(user_id)})
+    print("Yes Yes")
     if len(current_user) == 1 and str(current_user[0]["_id"]) != user_id:
         raise HTTPException(status_code=409, detail=f"Username {user.username} is already taken")
 
-    try:
-        user = {
-            k: v for k, v in user.model_dump(by_alias=True).items() if v is not None
-        }
+    print("Yes Yes")
+    user = {
+        k: v for k, v in user.model_dump(by_alias=True).items() if v is not None
+    }
 
-        if len(user) >= 1:
-            update_result = mongodb_service["collection"].find_one_and_update(
-                {"_id": ObjectId(user_id)},
-                {"$set": user},
-                return_document=ReturnDocument.AFTER,
-            )
+    if len(user) >= 1:
+        update_result = mongodb_service["collection"].find_one_and_update(
+            {"_id": ObjectId(user_id)},
+            {"$set": user},
+            return_document=ReturnDocument.AFTER,
+        )
 
-            changes = {k: {"old": current_user.get(k), 'new': user[k]} for k in user}
-            if update_result is not None:
-                message = {
-                    'details': changes
-                }
+        changes = {k: {"old": current_user.get(k), 'new': user[k]} for k in user}
+        if update_result is not None:
+            message = {
+                'details': changes
+            }
 
-                publish_to_sns(f"User profile updated for user_id {user_id}", message)
-                return update_result
-            else:
-                raise HTTPException(status_code=404, detail=f"User ID of {user_id} not found")
-    except ResponseValidationError as e:
-        raise HTTPException(status_code=422, detail=str(e))
+            publish_to_sns(f"User profile updated for user_id {user_id}", message)
+            return update_result
+        else:
+            raise HTTPException(status_code=404, detail=f"User ID of {user_id} not found")
 
     if (existing_user := mongodb_service["collection"].find_one({"_id": ObjectId(user_id)})) is not None:
         return existing_user
