@@ -116,15 +116,29 @@ service.add_middleware(
 )
 
 
-def publish_to_sns(subject, message):
-    message_json = json.dumps(message)
+def lambda_handler(action, subject, context):
+    message = ""
+    if action == "create":
+        message += "A new user has been registered with the following details:\n"
+        for key, value in context.items():
+            message += f"{key.capitalize()}: {value}\n"
+    elif action == 'update':
+        message += "User profile has been update with the following details:\n"
+        for key, change in context["details"].items():
+            old_value = change["old"]
+            new_value = change["new"]
+            message += f"{key.capitalize()} changed from {old_value} to {new_value}.\n"
+    elif action == "delete":
+        message += "A user profile has been deleted.\n"
+        for key, value in context.items():
+            message += f"{key.capitalize()}: {value}\n"
     try:
-        if "_id" in message:
-            message["_id"] = str(message["_id"])
+        #if "_id" in context:
+        #    context["_id"] = str(context["_id"])
         response = sns_client.publish(
             TopicArn=TOPIC_ARN,
             Subject=subject,
-            Message=message_json
+            Message=message
         )
         return response
     except ClientError as e:
@@ -177,7 +191,7 @@ async def create_user(user: UserWithPwd = Body(...)):
     )
 
     user_info = await build_user_info(user)
-    publish_to_sns(f"User {created_user['_id']} created successfully", user_info)
+    lambda_handler("create", f"User {created_user['_id']} created successfully", user_info)
 
     return created_user
 
@@ -276,7 +290,7 @@ async def update_user_profile(user_id: str, user: UpdateUserModel = Body(...)):
                 'details': changes
             }
 
-            publish_to_sns(f"User profile updated for user_id {user_id}", message)
+            lambda_handler("update", f"User profile updated for user_id {user_id}", message)
             return update_result
         else:
             raise HTTPException(status_code=404, detail=f"User ID of {user_id} not found")
@@ -311,7 +325,6 @@ async def change_username(user_id: str, new_username: UpdateUsername = Body(...)
         {"$set": user},
         return_document=ReturnDocument.AFTER,
     )
-
     return update_result
 
 
@@ -333,7 +346,7 @@ async def delete_user(user_id: str):
 
     user_info = await build_user_info(user)
 
-    publish_to_sns(f"User {user_id} has been deleted", user_info)
+    lambda_handler("delete", f"User {user_id} has been deleted", user_info)
     return {"message": "User deleted successfully"}
 
 

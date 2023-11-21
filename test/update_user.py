@@ -1,9 +1,9 @@
 import requests
 
-update_url = "http://localhost:8000/users/65584096b11eb1c3d4462d0c/update"
+update_url = "http://localhost:8000/users/655bf58308d4f461da132298/change-username"
 
 update_data = {
-    "age": 23,
+    "username": "ll222",
 }
 
 headers = {
