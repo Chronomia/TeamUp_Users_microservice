@@ -1,6 +1,7 @@
-import json
 import logging
 import os
+import random
+import string
 from contextlib import asynccontextmanager
 from datetime import timedelta, datetime
 from typing import Optional, Union, Annotated
@@ -8,20 +9,17 @@ from typing import Optional, Union, Annotated
 import boto3
 import certifi
 import uvicorn
-import random
-import string
 from botocore.exceptions import ClientError
 from bson import ObjectId
 from fastapi import FastAPI, Body, HTTPException, Security, Depends
-from fastapi.exceptions import ResponseValidationError
 from fastapi.security import APIKeyCookie, OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from fastapi_sso.sso.base import OpenID
 from jose import jwt
+from passlib.context import CryptContext
 from pydantic import BaseModel
 from pymongo import MongoClient, ReturnDocument
 from random_username.generate import generate_username
 from starlette import status
-from passlib.context import CryptContext
 from starlette.middleware.cors import CORSMiddleware
 
 from app.google_auth import google_auth_app
