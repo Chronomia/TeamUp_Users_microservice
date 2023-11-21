@@ -161,3 +161,6 @@ cython_debug/
 
 # Linux bash script specific
 run.sh
+
+# Lambda Function
+lambda_function.py
