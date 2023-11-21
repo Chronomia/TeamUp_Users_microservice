@@ -13,6 +13,7 @@ import string
 from botocore.exceptions import ClientError
 from bson import ObjectId
 from fastapi import FastAPI, Body, HTTPException, Security, Depends
+from fastapi.exceptions import ResponseValidationError
 from fastapi.security import APIKeyCookie, OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from fastapi_sso.sso.base import OpenID
 from jose import jwt
@@ -265,22 +266,25 @@ async def update_user_profile(user_id: str, user: UpdateUserModel = Body(...)):
     }
 
     if len(user) >= 1:
-        update_result = mongodb_service["collection"].find_one_and_update(
-            {"_id": ObjectId(user_id)},
-            {"$set": user},
-            return_document=ReturnDocument.AFTER,
-        )
+        try:
+            update_result = mongodb_service["collection"].find_one_and_update(
+                {"_id": ObjectId(user_id)},
+                {"$set": user},
+                return_document=ReturnDocument.AFTER,
+            )
 
-        changes = {k: {"old": current_user.get(k), 'new': user[k]} for k in user}
-        if update_result is not None:
-            message = {
-                'details': changes
-            }
+            changes = {k: {"old": current_user.get(k), 'new': user[k]} for k in user}
+            if update_result is not None:
+                message = {
+                    'details': changes
+                }
 
-            publish_to_sns(f"User profile updated for user_id {user_id}", message)
-            return update_result
-        else:
-            raise HTTPException(status_code=404, detail=f"User ID of {user_id} not found")
+                publish_to_sns(f"User profile updated for user_id {user_id}", message)
+                return update_result
+            else:
+                raise HTTPException(status_code=404, detail=f"User ID of {user_id} not found")
+        except ResponseValidationError as e:
+            raise HTTPException(status_code=422, detail=e)
 
     if (existing_user := mongodb_service["collection"].find_one({"_id": ObjectId(user_id)})) is not None:
         return existing_user
