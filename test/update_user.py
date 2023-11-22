@@ -1,6 +1,6 @@
 import requests
 
-update_url = "http://localhost:8000/users/655bf58308d4f461da132298/update"
+update_url = "http://ec2-44-219-26-13.compute-1.amazonaws.com:8000/users/655bf58308d4f461da132298/update"
 
 update_data = {
     "age": "30",

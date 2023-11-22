@@ -1,6 +1,6 @@
 import requests
 
-url = "http://localhost:8000/users/"
+url = "http://ec2-44-219-26-13.compute-1.amazonaws.com:8000/users/"
 headers = {
     "Content-Type": "application/json",
 }

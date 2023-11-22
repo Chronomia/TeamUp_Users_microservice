@@ -1,6 +1,6 @@
 import requests
 
-list_users_url = "http://localhost:8000/users/"
+list_users_url = "http://ec2-44-219-26-13.compute-1.amazonaws.com:8000/users/"
 
 params = {
     "interest": "Music",
