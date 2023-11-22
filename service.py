@@ -266,10 +266,7 @@ async def update_user_profile(user_id: str, user: UpdateUserModel = Body(...)):
 
         changes = {k: {"old": current_user.get(k), 'new': user[k]} for k in user}
         if update_result is not None:
-            message = {
-                'details': changes
-            }
-
+            message = {'details': changes}
             lambda_payload = {
                 "action": "update",
                 "subject": f"User profile updated for user_id {user_id}",
@@ -290,7 +287,6 @@ async def update_user_profile(user_id: str, user: UpdateUserModel = Body(...)):
         return existing_user
 
     raise HTTPException(status_code=404, detail=f"User ID of {user_id} not found")
-
 
 @service.put(
     "/users/{user_id}/change-username",
