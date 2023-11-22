@@ -116,19 +116,29 @@ service.add_middleware(
 
 async def build_user_info(user):
     if isinstance(user, dict):
-        return user
-
-    user_info = {
-        "username": user.username,
-        "first_name": user.first_name,
-        "last_name": user.last_name,
-        "email": user.email,
-        "contact": user.contact,
-        "location": user.location,
-        "interests": user.interests,
-        "age": user.age,
-        "gender": user.gender,
-    }
+        user_info = {
+            "username": user["username"],
+            "first_name": user["first_name"],
+            "last_name": user["last_name"],
+            "email": user["email"],
+            "contact": user["contact"],
+            "location": user["location"],
+            "interests": user["interests"],
+            "age": user["age"],
+            "gender": user["gender"],
+        }
+    else:
+        user_info = {
+            "username": user.username,
+            "first_name": user.first_name,
+            "last_name": user.last_name,
+            "email": user.email,
+            "contact": user.contact,
+            "location": user.location,
+            "interests": user.interests,
+            "age": user.age,
+            "gender": user.gender,
+        }
     return user_info
 
 
