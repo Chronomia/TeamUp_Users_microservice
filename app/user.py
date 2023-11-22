@@ -30,7 +30,7 @@ class UserWithJWT(UserFullModel):
 
 
 class UserWithPwd(UserFullModel):
-    password: str
+    password: str = Field(..., min_length=8)
 
 
 class UserGroupModel(BaseModel):

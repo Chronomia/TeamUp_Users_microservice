@@ -115,6 +115,9 @@ service.add_middleware(
 
 
 async def build_user_info(user):
+    if isinstance(user, dict):
+        return user
+
     user_info = {
         "username": user.username,
         "first_name": user.first_name,
