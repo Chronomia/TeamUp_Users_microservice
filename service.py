@@ -1,3 +1,4 @@
+import json
 import logging
 import os
 import random
@@ -40,13 +41,12 @@ logger = logging.getLogger(__name__)
 mongodb_service = {}
 
 TOPIC_ARN = os.environ.get('TOPIC_ARN')
-sns_client = boto3.client(
-    'sns',
+lambda_client = boto3.client(
+    'lambda',
     aws_access_key_id=AWS_ACCESS_KEY,
     aws_secret_access_key=AWS_SECRET_KEY,
     region_name='us-east-1'
 )
-
 
 class SimpleResponseModel(BaseModel):
     message: str
@@ -113,37 +113,6 @@ service.add_middleware(
     allow_headers=["*"],
 )
 
-
-def lambda_handler(action, subject, context):
-    message = ""
-    if action == "create":
-        message += "A new user has been registered with the following details:\n"
-        for key, value in context.items():
-            message += f"{key.capitalize()}: {value}\n"
-    elif action == 'update':
-        message += "User profile has been update with the following details:\n"
-        for key, change in context["details"].items():
-            old_value = change["old"]
-            new_value = change["new"]
-            message += f"{key.capitalize()} changed from {old_value} to {new_value}.\n"
-    elif action == "delete":
-        message += "A user profile has been deleted.\n"
-        for key, value in context.items():
-            message += f"{key.capitalize()}: {value}\n"
-    try:
-        # if "_id" in context:
-        #     context["_id"] = str(context["_id"])
-        response = sns_client.publish(
-            TopicArn=TOPIC_ARN,
-            Subject=subject,
-            Message=message
-        )
-        return response
-    except ClientError as e:
-        print(f"Error publishing to SNS: {e}")
-        raise
-
-
 async def build_user_info(user):
     user_info = {
         "username": user.username,
@@ -188,8 +157,17 @@ async def create_user(user: UserWithPwd = Body(...)):
         {"_id": new_user.inserted_id}
     )
 
-    user_info = await build_user_info(user)
-    lambda_handler("create", f"User {created_user['_id']} created successfully", user_info)
+    lambda_payload = {
+        "action": "create",
+        "subject": f"User {created_user['_id']} created successfully",
+        "user_info": await build_user_info(created_user)
+    }
+
+    lambda_client.invoke(
+        FunctionName='userSNSnotifications',
+        InvocationType='Event',
+        Payload=json.dumps(lambda_payload),
+    )
 
     return created_user
 
@@ -284,11 +262,18 @@ async def update_user_profile(user_id: str, user: UpdateUserModel = Body(...)):
 
         changes = {k: {"old": current_user.get(k), 'new': user[k]} for k in user}
         if update_result is not None:
-            message = {
-                'details': changes
+            message = {'details': changes}
+            lambda_payload = {
+                "action": "update",
+                "subject": f"User profile updated for user_id {user_id}",
+                "change": message
             }
 
-            lambda_handler("update", f"User profile updated for user_id {user_id}", message)
+            lambda_client.invoke(
+                FunctionName='userSNSnotifications',
+                InvocationType='Event',
+                Payload=json.dumps(lambda_payload),
+            )
             return update_result
         else:
             raise HTTPException(status_code=404, detail=f"User ID of {user_id} not found")
@@ -349,9 +334,17 @@ async def delete_user(user_id: str):
     if delete_result.deleted_count == 0:
         raise HTTPException(status_code=404, detail=f"User with ID {user_id} not found")
 
-    user_info = await build_user_info(user)
+    lambda_payload = {
+        "action": "delete",
+        "subject": f"User {user_id} has been deleted",
+        "user_info": await build_user_info(user)
+    }
 
-    lambda_handler("delete", f"User {user_id} has been deleted", user_info)
+    lambda_client.invoke(
+        FunctionName='userSNSnotifications',
+        InvocationType='Event',
+        Payload=json.dumps(lambda_payload),
+    )
     return {"message": "User deleted successfully"}
 
 
