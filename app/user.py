@@ -25,6 +25,10 @@ class UserFullModel(UserModel):
     event_participation_list: List[str] = Field(...)
 
 
+class UserWithJWT(UserFullModel):
+    access_token: str
+
+
 class UserWithPwd(UserFullModel):
     password: str
 

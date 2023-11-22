@@ -1,6 +1,7 @@
-import json
 import logging
 import os
+import random
+import string
 from contextlib import asynccontextmanager
 from datetime import timedelta, datetime
 from typing import Optional, Union, Annotated
@@ -8,26 +9,22 @@ from typing import Optional, Union, Annotated
 import boto3
 import certifi
 import uvicorn
-import random
-import string
 from botocore.exceptions import ClientError
 from bson import ObjectId
 from fastapi import FastAPI, Body, HTTPException, Security, Depends
-from fastapi.exceptions import ResponseValidationError
 from fastapi.security import APIKeyCookie, OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from fastapi_sso.sso.base import OpenID
 from jose import jwt
+from passlib.context import CryptContext
 from pydantic import BaseModel
 from pymongo import MongoClient, ReturnDocument
 from random_username.generate import generate_username
 from starlette import status
-from passlib.context import CryptContext
 from starlette.middleware.cors import CORSMiddleware
-
 
 from app.google_auth import google_auth_app
 from app.user import UserModel, UserGroupModel, UserEventModel, UpdateUserModel, UserCollection, UserWithPwd, \
-    UserFullModel, UpdateUsername
+    UserFullModel, UpdateUsername, UserWithJWT
 
 ATLAS_URI = os.environ.get('ATLAS_URI')
 SECRET_KEY = os.environ.get('SECRET_KEY')
@@ -43,9 +40,8 @@ logger = logging.getLogger(__name__)
 mongodb_service = {}
 
 TOPIC_ARN = os.environ.get('TOPIC_ARN')
-
-lambda_client = boto3.client(
-    'lambda',
+sns_client = boto3.client(
+    'sns',
     aws_access_key_id=AWS_ACCESS_KEY,
     aws_secret_access_key=AWS_SECRET_KEY,
     region_name='us-east-1'
@@ -84,10 +80,18 @@ def create_access_token(data: dict, expires_delta: Union[timedelta, None] = None
     if expires_delta:
         expire = datetime.utcnow() + expires_delta
     else:
-        expire = datetime.utcnow() + timedelta(minutes=60)
+        expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     to_encode.update({"exp": expire})
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
+
+
+async def get_logged_user(cookie: str = Security(APIKeyCookie(name="token"))) -> OpenID:
+    try:
+        claims = jwt.decode(cookie, key=SECRET_KEY, algorithms=["HS256"])
+        return OpenID(**claims["pld"])
+    except Exception as error:
+        raise HTTPException(status_code=401, detail="Invalid authentication credentials") from error
 
 
 @asynccontextmanager
@@ -99,14 +103,6 @@ async def lifespan(app: FastAPI):
     mongodb_service.clear()
 
 
-async def get_logged_user(cookie: str = Security(APIKeyCookie(name="token"))) -> OpenID:
-    try:
-        claims = jwt.decode(cookie, key=SECRET_KEY, algorithms=["HS256"])
-        return OpenID(**claims["pld"])
-    except Exception as error:
-        raise HTTPException(status_code=401, detail="Invalid authentication credentials") from error
-
-
 service = FastAPI(lifespan=lifespan)
 service.mount("/auth", google_auth_app)
 service.add_middleware(
@@ -116,6 +112,37 @@ service.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+def lambda_handler(action, subject, context):
+    message = ""
+    if action == "create":
+        message += "A new user has been registered with the following details:\n"
+        for key, value in context.items():
+            message += f"{key.capitalize()}: {value}\n"
+    elif action == 'update':
+        message += "User profile has been update with the following details:\n"
+        for key, change in context["details"].items():
+            old_value = change["old"]
+            new_value = change["new"]
+            message += f"{key.capitalize()} changed from {old_value} to {new_value}.\n"
+    elif action == "delete":
+        message += "A user profile has been deleted.\n"
+        for key, value in context.items():
+            message += f"{key.capitalize()}: {value}\n"
+    try:
+        # if "_id" in context:
+        #     context["_id"] = str(context["_id"])
+        response = sns_client.publish(
+            TopicArn=TOPIC_ARN,
+            Subject=subject,
+            Message=message
+        )
+        return response
+    except ClientError as e:
+        print(f"Error publishing to SNS: {e}")
+        raise
+
 
 async def build_user_info(user):
     user_info = {
@@ -161,17 +188,8 @@ async def create_user(user: UserWithPwd = Body(...)):
         {"_id": new_user.inserted_id}
     )
 
-    lambda_payload = {
-        "action": "create",
-        "subject": f"User {created_user['_id']} created successfully",
-        "user_info": await build_user_info(created_user)
-    }
-
-    lambda_client.invoke(
-        FunctionName='userSNSnotifications',
-        InvocationType='Event',
-        Payload=json.dumps(lambda_payload),
-    )
+    user_info = await build_user_info(user)
+    lambda_handler("create", f"User {created_user['_id']} created successfully", user_info)
 
     return created_user
 
@@ -266,19 +284,11 @@ async def update_user_profile(user_id: str, user: UpdateUserModel = Body(...)):
 
         changes = {k: {"old": current_user.get(k), 'new': user[k]} for k in user}
         if update_result is not None:
-            message = {'details': changes}
-            lambda_payload = {
-                "action": "update",
-                "subject": f"User profile updated for user_id {user_id}",
-                "change": message
+            message = {
+                'details': changes
             }
 
-            lambda_client.invoke(
-                FunctionName='userSNSnotifications',
-                InvocationType='Event',
-                Payload=json.dumps(lambda_payload),
-            )
-
+            lambda_handler("update", f"User profile updated for user_id {user_id}", message)
             return update_result
         else:
             raise HTTPException(status_code=404, detail=f"User ID of {user_id} not found")
@@ -288,13 +298,21 @@ async def update_user_profile(user_id: str, user: UpdateUserModel = Body(...)):
 
     raise HTTPException(status_code=404, detail=f"User ID of {user_id} not found")
 
+
 @service.put(
     "/users/{user_id}/change-username",
     response_description="Update username",
-    response_model=UserFullModel,
+    response_model=UserWithJWT,
     response_model_by_alias=False,
 )
 async def change_username(user_id: str, new_username: UpdateUsername = Body(...)):
+    """
+    ATTENTION: Changing username will automatically issue a new JWT token for access credential.
+    """
+    current_user = mongodb_service["collection"].find_one({"_id": ObjectId(user_id)})
+    if current_user is None:
+        raise HTTPException(status_code=404, detail=f"User ID of {user_id} not found")
+
     existing_user = list(mongodb_service["collection"].find({"username": new_username.username}).limit(1))
     if len(existing_user) == 1 and str(existing_user[0]["_id"]) != user_id:
         raise HTTPException(status_code=409, detail=f"Username {new_username.username} is already taken")
@@ -308,6 +326,10 @@ async def change_username(user_id: str, new_username: UpdateUsername = Body(...)
         {"$set": user},
         return_document=ReturnDocument.AFTER,
     )
+
+    data_for_token = {"username": update_result["username"],
+                      "email": update_result["email"]}
+    update_result["access_token"] = create_access_token(data=data_for_token)
     return update_result
 
 
@@ -327,17 +349,9 @@ async def delete_user(user_id: str):
     if delete_result.deleted_count == 0:
         raise HTTPException(status_code=404, detail=f"User with ID {user_id} not found")
 
-    lambda_payload = {
-        "action": "delete",
-        "subject": f"User {user_id} has been deleted",
-        "user_info": await build_user_info(user)
-    }
+    user_info = await build_user_info(user)
 
-    lambda_client.invoke(
-        FunctionName='userSNSnotifications',
-        InvocationType='Event',
-        Payload=json.dumps(lambda_payload),
-    )
+    lambda_handler("delete", f"User {user_id} has been deleted", user_info)
     return {"message": "User deleted successfully"}
 
 
