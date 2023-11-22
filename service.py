@@ -10,7 +10,6 @@ from typing import Optional, Union, Annotated
 import boto3
 import certifi
 import uvicorn
-from botocore.exceptions import ClientError
 from bson import ObjectId
 from fastapi import FastAPI, Body, HTTPException, Security, Depends
 from fastapi.security import APIKeyCookie, OAuth2PasswordBearer, OAuth2PasswordRequestForm
@@ -47,6 +46,7 @@ lambda_client = boto3.client(
     aws_secret_access_key=AWS_SECRET_KEY,
     region_name='us-east-1'
 )
+
 
 class SimpleResponseModel(BaseModel):
     message: str
@@ -112,6 +112,7 @@ service.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
 
 async def build_user_info(user):
     user_info = {
@@ -312,6 +313,21 @@ async def change_username(user_id: str, new_username: UpdateUsername = Body(...)
         return_document=ReturnDocument.AFTER,
     )
 
+    # Push SNS notification
+    changes = {k: {"old": current_user.get(k), 'new': user[k]} for k in user}
+    message = {'details': changes}
+    lambda_payload = {
+        "action": "update",
+        "subject": f"Username updated for user_id {user_id}",
+        "change": message
+    }
+    lambda_client.invoke(
+        FunctionName='userSNSnotifications',
+        InvocationType='Event',
+        Payload=json.dumps(lambda_payload),
+    )
+
+    # Return the updated user profile along with the new JWT token
     data_for_token = {"username": update_result["username"],
                       "email": update_result["email"]}
     update_result["access_token"] = create_access_token(data=data_for_token)
