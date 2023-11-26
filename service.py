@@ -255,7 +255,7 @@ async def find_user_by_email(email: str):
 
 
 @service.put(
-    "/users/{user_id}/update",
+    "/users/{user_id}/profile",
     response_description="Update a user's profile by id",
     response_model=UserFullModel,
     response_model_by_alias=False,
@@ -299,7 +299,7 @@ async def update_user_profile(user_id: str, user: UpdateUserModel = Body(...)):
 
 
 @service.put(
-    "/users/{user_id}/change-username",
+    "/users/{user_id}/username",
     response_description="Update username",
     response_model=UserWithJWT,
     response_model_by_alias=False,
