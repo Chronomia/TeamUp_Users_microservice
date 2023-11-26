@@ -161,6 +161,7 @@ cython_debug/
 
 # Linux bash script specific
 run.sh
+nohup.out
 
 # Lambda Function
 lambda_function.py
