@@ -189,7 +189,7 @@ async def create_user(user: UserWithPwd = Body(...)):
 @service.get(
     "/users/",
     response_description="List all users with pagination and optional filtering by interest/location",
-    response_model=UserCollection,
+    response_model=UserFullModel,
     response_model_by_alias=False,
 )
 async def list_all_users(interest: Optional[str] = None, location: Optional[str] = None, page: int = 1, limit: int = 5):
@@ -200,7 +200,7 @@ async def list_all_users(interest: Optional[str] = None, location: Optional[str]
         query["location"] = location
 
     items = mongodb_service["collection"].find(query).skip((page - 1) * limit).limit(limit)
-    return UserCollection(users=items)
+    return UserFullModel(users=items)
 
 
 @service.get(
