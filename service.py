@@ -298,55 +298,6 @@ async def update_user_profile(user_id: str, user: UpdateUserModel = Body(...)):
     raise HTTPException(status_code=404, detail=f"User ID of {user_id} not found")
 
 
-@service.put(
-    "/users/{user_id}/username",
-    response_description="Update username",
-    response_model=UserWithJWT,
-    response_model_by_alias=False,
-)
-async def change_username(user_id: str, new_username: UpdateUsername = Body(...)):
-    """
-    ATTENTION: Changing username will automatically issue a new JWT token for access credential.
-    """
-    current_user = mongodb_service["collection"].find_one({"_id": ObjectId(user_id)})
-    if current_user is None:
-        raise HTTPException(status_code=404, detail=f"User ID of {user_id} not found")
-
-    existing_user = list(mongodb_service["collection"].find({"username": new_username.username}).limit(1))
-    if len(existing_user) == 1 and str(existing_user[0]["_id"]) != user_id:
-        raise HTTPException(status_code=409, detail=f"Username {new_username.username} is already taken")
-
-    user = {
-        k: v for k, v in new_username.model_dump(by_alias=True).items() if v is not None
-    }
-
-    update_result = mongodb_service["collection"].find_one_and_update(
-        {"_id": ObjectId(user_id)},
-        {"$set": user},
-        return_document=ReturnDocument.AFTER,
-    )
-
-    # Push SNS notification
-    changes = {k: {"old": current_user.get(k), 'new': user[k]} for k in user}
-    message = {'details': changes}
-    lambda_payload = {
-        "action": "update",
-        "subject": f"Username updated for user_id {user_id}",
-        "change": message
-    }
-    lambda_client.invoke(
-        FunctionName='userSNSnotifications',
-        InvocationType='Event',
-        Payload=json.dumps(lambda_payload),
-    )
-
-    # Return the updated user profile along with the new JWT token
-    data_for_token = {"username": update_result["username"],
-                      "email": update_result["email"]}
-    update_result["access_token"] = create_access_token(data=data_for_token)
-    return update_result
-
-
 @service.delete(
     "/users/{user_id}",
     response_description="Delete a user",
