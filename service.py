@@ -200,7 +200,7 @@ async def list_all_users(interest: Optional[str] = None, location: Optional[str]
         query["location"] = location
 
     items = mongodb_service["collection"].find(query).skip((page - 1) * limit).limit(limit)
-    return UserFullModel(users=items)
+    return items
 
 
 @service.get(
