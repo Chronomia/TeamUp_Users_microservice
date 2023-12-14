@@ -70,4 +70,4 @@ class UpdateUsername(BaseModel):
 
 
 class UserCollection(BaseModel):
-    users: List[UserFullModel]
+    users: List[UserModel]
