@@ -24,7 +24,7 @@ from starlette.middleware.cors import CORSMiddleware
 
 from app.google_auth import google_auth_app
 from app.user import UserModel, UserGroupModel, UserEventModel, UpdateUserModel, UserCollection, UserWithPwd, \
-    UserFullModel, UpdateUsername, UserWithJWT
+    UserFullModel
 
 ATLAS_URI = os.environ.get('ATLAS_URI')
 SECRET_KEY = os.environ.get('SECRET_KEY')
@@ -380,17 +380,6 @@ async def find_user_friends_by_id(user_id: str):
         raise HTTPException(status_code=404, detail=f"User ID of {user_id} not found")
 
     return user
-
-
-@service.get(
-    "/users/{user_id}/comments",
-    response_description="Returns user's comment records by user id",
-    response_model=None,
-    response_model_by_alias=False,
-)
-async def find_user_comment_by_id(user_id: str):
-    # TODO: To be integrated with the group and event microservice
-    pass
 
 
 @service.post("/token")
