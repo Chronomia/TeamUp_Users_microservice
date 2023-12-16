@@ -23,8 +23,7 @@ from starlette import status
 from starlette.middleware.cors import CORSMiddleware
 
 from app.google_auth import google_auth_app
-from app.user import UserModel, UserGroupModel, UserEventModel, UpdateUserModel, UserCollection, UserWithPwd, \
-    UserFullModel
+from app.user import UserModel, UpdateUserModel, UserCollection, UserWithPwd, UserFullModel, UserFriendsModel
 
 ATLAS_URI = os.environ.get('ATLAS_URI')
 SECRET_KEY = os.environ.get('SECRET_KEY')
@@ -329,45 +328,9 @@ async def delete_user(user_id: str):
 
 
 @service.get(
-    "/users/{user_id}/events",
-    response_description="Returns user's event records by user id",
-    response_model=UserEventModel,
-    response_model_by_alias=False
-)
-async def find_user_event_by_id(user_id: str):
-    user = mongodb_service["collection"].find_one(
-        {"_id": ObjectId(user_id)},
-        {"event_organizer_list": 1, "event_participation_list": 1}
-    )
-
-    if user is None:
-        raise HTTPException(status_code=404, detail=f"User ID of {user_id} not found")
-
-    return user
-
-
-@service.get(
-    "/users/{user_id}/groups",
-    response_description="Returns user's group records by user id",
-    response_model=UserGroupModel,
-    response_model_by_alias=False,
-)
-async def find_user_group_by_id(user_id: str):
-    user = mongodb_service["collection"].find_one(
-        {"_id": ObjectId(user_id)},
-        {"group_organizer_list": 1, "group_member_list": 1}
-    )
-
-    if user is None:
-        raise HTTPException(status_code=404, detail=f"User ID of {user_id} not found")
-
-    return user
-
-
-@service.get(
     "/users/{user_id}/friends",
     response_description="Returns user's friends by user id",
-    response_model=UserGroupModel,
+    response_model=UserFriendsModel,
     response_model_by_alias=False,
 )
 async def find_user_friends_by_id(user_id: str):

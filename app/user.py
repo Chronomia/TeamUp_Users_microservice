@@ -19,10 +19,6 @@ class UserModel(BaseModel):
 class UserFullModel(UserModel):
     id: Optional[PyObjectId] = Field(alias="_id", default=None)
     friends: List[str] = Field(...)
-    group_member_list: List[str] = Field(...)
-    group_organizer_list: List[str] = Field(...)
-    event_organizer_list: List[str] = Field(...)
-    event_participation_list: List[str] = Field(...)
 
 
 class UserWithJWT(UserFullModel):
@@ -31,18 +27,6 @@ class UserWithJWT(UserFullModel):
 
 class UserWithPwd(UserFullModel):
     password: str = Field(..., min_length=8)
-
-
-class UserGroupModel(BaseModel):
-    id: Optional[PyObjectId] = Field(alias="_id", default=None)
-    group_member_list: List[str] = Field(...)
-    group_organizer_list: List[str] = Field(...)
-
-
-class UserEventModel(BaseModel):
-    id: Optional[PyObjectId] = Field(alias="_id", default=None)
-    event_organizer_list: List[str] = Field(...)
-    event_participation_list: List[str] = Field(...)
 
 
 class UserFriendsModel(BaseModel):
@@ -59,10 +43,6 @@ class UpdateUserModel(BaseModel):
     age: Optional[int] = Field(default=None, ge=13, le=150)
     gender: Optional[str] = None
     friends: Optional[List[str]] = None
-    group_member_list: Optional[List[str]] = None
-    group_organizer_list: Optional[List[str]] = None
-    event_organizer_list: Optional[List[str]] = None
-    event_participation_list: Optional[List[str]] = None
 
 
 class UpdateUsername(BaseModel):
