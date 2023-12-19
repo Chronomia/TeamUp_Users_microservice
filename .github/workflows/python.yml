@@ -41,5 +41,7 @@ jobs:
           echo "$PRIVATE_KEY" > private_key && chmod 600 private_key
           ssh -o StrictHostKeyChecking=no -i private_key ${HOSTNAME} '
             cd TeamUp_Users_microservice
-            ls
+            pkill python
+            git pull
+            nohup ./run.sh >/dev/null 2>&1 &
           '
