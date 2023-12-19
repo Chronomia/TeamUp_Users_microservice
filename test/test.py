@@ -5,7 +5,7 @@ import requests
 class UserTest(unittest.TestCase):
 
     def setUp(self):
-        self.url = "http://ec2-44-219-26-13.compute-1.amazonaws.com:8000/"
+        self.url = "http://127.0.0.1:8000/"
         self.headers = {
             "Content-Type": "application/json"
         }
