@@ -26,6 +26,7 @@ jobs:
           python test/test.py
           
   deploy:
+    needs: build
     name: Deploy to EC2
     runs-on: ubuntu-latest
 
