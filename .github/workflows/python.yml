@@ -23,4 +23,6 @@ jobs:
           architecture: 'x64'
       # You can test your matrix by printing the current Python version
       - name: Call Python Unit Test
-        run: python test/test.py
+        run: |
+          pip install requests
+          python test/test.py
