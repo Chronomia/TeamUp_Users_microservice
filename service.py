@@ -140,11 +140,16 @@ async def build_user_info(user):
         }
     return user_info
 
-"""
+
+@service.get('/abc')
+async def root():
+    return {'user_service_status': 'ONLINE'}
+
+
 @service.get('/')
 async def root():
     return {'user_service_status': 'ONLINE'}
-"""
+
 
 @service.post(
     "/users/",
