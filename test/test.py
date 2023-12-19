@@ -24,7 +24,7 @@ class UserTest(unittest.TestCase):
         }
         response = requests.get(self.url)
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json(), {'user_service_status': 'ONLIN'})
+        self.assertEqual(response.json(), {'user_service_status': 'ONLINE'})
 
     def test_create_user(self):
         response = requests.post(self.url + "users", json=self.user, headers=self.headers)
