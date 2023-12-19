@@ -8,7 +8,7 @@ on:
 
 jobs:
   build:
-
+    name: Build and test
     runs-on: ubuntu-latest
 
     steps:
@@ -24,3 +24,21 @@ jobs:
           SECRET_KEY=${{ secrets.SECRET_KEY }} CLIENT_ID=${{ secrets.CLIENT_ID }} CLIENT_SECRET=${{ secrets.CLIENT_SECRET }} ATLAS_URI=${{ secrets.ATLAS_URI }} TOPIC_ARN=${{ secrets.TOPIC_ARN }} AWS_ACCESS_KEY=${{ secrets.AWS_ACCESS_KEY }} AWS_SECRET_KEY=${{ secrets.AWS_SECRET_KEY }} AWS_EC2_ADDRESS=${{ secrets.AWS_EC2_ADDRESS }} API_KEY=${{ secrets.API_KEY }} python service.py &
           sleep 3
           python test/test.py
+          
+  deploy:
+    name: Deploy to EC2
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v2
+      - name: Build & Deploy
+        env:
+          PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          HOSTNAME: ${{ secrets.SSH_HOST }}
+
+        run: |
+          echo "$PRIVATE_KEY" > private_key && chmod 600 private_key
+          ssh -o StrictHostKeyChecking=no -i private_key ${HOSTNAME} '
+            cd TeamUp_Users_microservice
+            ls
+          '
