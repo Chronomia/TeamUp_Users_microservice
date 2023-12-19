@@ -1,4 +1,4 @@
-name: User CI
+name: User Microservice Integration
 
 on:
   push:
@@ -14,15 +14,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Set up Python
-        # This is the version of the action for setting up Python, not the Python version.
         uses: actions/setup-python@v4
         with:
-          # Semantic version range syntax or exact version of a Python version
           python-version: '3.9'
-          # Optional - x64 or x86 architecture, defaults to x64
           architecture: 'x64'
-      # You can test your matrix by printing the current Python version
       - name: Python Unit Test for API endpoints
         run: |
-          pip install requests
+          pip install -r requirements.txt
+          SECRET_KEY=${{ secrets.SECRET_KEY }} CLIENT_ID=${{ secrets.CLIENT_ID }} CLIENT_SECRET=${{ secrets.CLIENT_SECRET }} ATLAS_URI=${{ secrets.ATLAS_URI }} TOPIC_ARN=${{ secrets.TOPIC_ARN }} AWS_ACCESS_KEY=${{ secrets.AWS_ACCESS_KEY }} AWS_SECRET_KEY=${{ secrets.AWS_SECRET_KEY }} AWS_EC2_ADDRESS=${{ secrets.AWS_EC2_ADDRESS }} API_KEY=${{ secrets.API_KEY }} python service.py &
+          sleep 2
           python test/test.py
